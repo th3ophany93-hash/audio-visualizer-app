@@ -1,0 +1,10 @@
+<resources>
+    <string name="app_name">Audio Visualizer</string>
+    <string name="action_pick_audio">Выбрать аудио</string>
+    <string name="action_pick_image">Выбрать картинку</string>
+    <string name="action_export">Экспорт в MP4</string>
+    <string name="layers_title">Слои</string>
+    <string name="no_layers">Нет слоёв. Добавьте слой, чтобы начать.</string>
+    <string name="add_layer">Добавить слой</string>
+    <string name="export_not_implemented">Экспорт пока не реализован</string>
+</resources>

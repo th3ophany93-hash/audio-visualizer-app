@@ -8,6 +8,7 @@ import com.audiovisualizer.render.AudioTarget
 import com.audiovisualizer.render.BlendMode
 import com.audiovisualizer.render.Layer
 import com.audiovisualizer.render.LayerSource
+import com.audiovisualizer.render.effects.SpawnZone
 
 /**
  * Draws a layer stack into whichever GL surface is current on the calling
@@ -18,17 +19,26 @@ import com.audiovisualizer.render.LayerSource
  * into draw calls.
  *
  * Each layer's resolved audio intensity, texture and particle simulation
- * state are cached keyed by [Layer.id] ([AudioBindingResolver] included),
- * so layers are independent by construction: one layer's binding or effect
- * parameters can never leak into another's draw call.
+ * state are cached keyed by [Layer.id] ([AudioBindingResolver]/[LayerAnimator]
+ * included), so layers are independent by construction: one layer's
+ * binding or effect parameters can never leak into another's draw call.
+ *
+ * Static image layers use [AudioBindingResolver] (a direct, immediate
+ * band-to-value mapping). Particles, fog and glow are ambient effects -
+ * they use [LayerAnimator] instead, which keeps them animating on their
+ * own slow, irregular cycles and only ever lets audio contribute a rare,
+ * slow-fading boost during genuine climaxes, never a per-beat pulse.
  */
 class LayerCompositor(private val context: Context) {
 
     private lateinit var quad: QuadMesh
     private lateinit var imageProgram: ShaderProgram
     private lateinit var particleProgram: ShaderProgram
+    private lateinit var fogProgram: ShaderProgram
+    private lateinit var glowProgram: ShaderProgram
 
     private val bindingResolver = AudioBindingResolver()
+    private val layerAnimator = LayerAnimator()
     private val textureCache = HashMap<String, Int>()
     private val particleSystems = HashMap<String, ParticleSystem>()
     private val identityMvp = FloatArray(16).also { Matrix.setIdentityM(it, 0) }
@@ -48,6 +58,14 @@ class LayerCompositor(private val context: Context) {
             ShaderLoader.loadAsset(context, "shaders/particles.vert"),
             ShaderLoader.loadAsset(context, "shaders/particles.frag")
         )
+        fogProgram = ShaderProgram(
+            ShaderLoader.loadAsset(context, "shaders/passthrough.vert"),
+            ShaderLoader.loadAsset(context, "shaders/fog.frag")
+        )
+        glowProgram = ShaderProgram(
+            ShaderLoader.loadAsset(context, "shaders/passthrough.vert"),
+            ShaderLoader.loadAsset(context, "shaders/glow.frag")
+        )
 
         // GL resources from a previous context (e.g. before a surface recreation) are gone.
         textureCache.clear()
@@ -65,11 +83,24 @@ class LayerCompositor(private val context: Context) {
         for (layer in layers) {
             if (!layer.enabled) continue
             applyBlendMode(layer.blendMode)
-            val intensity = bindingResolver.resolve(layer.id, layer.audioBinding, audioFrame)
 
             when (val source = layer.source) {
-                is LayerSource.Image -> drawImageLayer(layer, source, intensity)
-                is LayerSource.Particles -> drawParticleLayer(layer, source, intensity, deltaSeconds)
+                is LayerSource.Image -> {
+                    val intensity = bindingResolver.resolve(layer.id, layer.audioBinding, audioFrame)
+                    drawImageLayer(layer, source, intensity)
+                }
+                is LayerSource.Particles -> {
+                    val animation = layerAnimator.update(layer.id, layer.audioBinding, audioFrame, deltaSeconds)
+                    drawParticleLayer(layer, source, animation.intensity, deltaSeconds)
+                }
+                is LayerSource.Fog -> {
+                    val animation = layerAnimator.update(layer.id, layer.audioBinding, audioFrame, deltaSeconds)
+                    drawFogLayer(source, animation)
+                }
+                is LayerSource.Glow -> {
+                    val animation = layerAnimator.update(layer.id, layer.audioBinding, audioFrame, deltaSeconds)
+                    drawGlowLayer(source, animation)
+                }
                 is LayerSource.Video, is LayerSource.Shader -> {
                     // TODO: video-to-texture decoding and standalone shader-effect
                     // layers land in a follow-up pass.
@@ -87,6 +118,8 @@ class LayerCompositor(private val context: Context) {
         particleSystems.clear()
         if (::imageProgram.isInitialized) imageProgram.release()
         if (::particleProgram.isInitialized) particleProgram.release()
+        if (::fogProgram.isInitialized) fogProgram.release()
+        if (::glowProgram.isInitialized) glowProgram.release()
     }
 
     private fun drawImageLayer(layer: Layer, source: LayerSource.Image, intensity: Float) {
@@ -151,6 +184,60 @@ class LayerCompositor(private val context: Context) {
 
         GLES30.glDisableVertexAttribArray(positionAttr)
         GLES30.glDisableVertexAttribArray(lifeAttr)
+    }
+
+    private fun drawFogLayer(source: LayerSource.Fog, animation: LayerAnimator.Result) {
+        val params = source.params
+        fogProgram.use()
+        GLES30.glUniformMatrix4fv(fogProgram.uniformLocation("uMVP"), 1, false, identityMvp, 0)
+        GLES30.glUniform1f(fogProgram.uniformLocation("uDensity"), params.density)
+        GLES30.glUniform1f(fogProgram.uniformLocation("uScale"), params.scale)
+        GLES30.glUniform1f(fogProgram.uniformLocation("uTime"), animation.elapsedSeconds)
+        GLES30.glUniform1f(fogProgram.uniformLocation("uIntensity"), animation.intensity)
+        setColorUniform(fogProgram, params.color)
+        setZoneUniforms(fogProgram, params.zone)
+
+        quad.draw(fogProgram.attributeLocation("aPosition"), fogProgram.attributeLocation("aTexCoord"))
+    }
+
+    private fun drawGlowLayer(source: LayerSource.Glow, animation: LayerAnimator.Result) {
+        val params = source.params
+        glowProgram.use()
+        GLES30.glUniformMatrix4fv(glowProgram.uniformLocation("uMVP"), 1, false, identityMvp, 0)
+        GLES30.glUniform1f(glowProgram.uniformLocation("uBrightness"), params.intensity)
+        GLES30.glUniform1f(glowProgram.uniformLocation("uRadius"), params.radius)
+        GLES30.glUniform1f(glowProgram.uniformLocation("uScale"), params.scale)
+        GLES30.glUniform1f(glowProgram.uniformLocation("uTime"), animation.elapsedSeconds)
+        GLES30.glUniform1f(glowProgram.uniformLocation("uIntensity"), animation.intensity)
+        setColorUniform(glowProgram, params.color)
+        setZoneUniforms(glowProgram, params.zone)
+
+        quad.draw(glowProgram.attributeLocation("aPosition"), glowProgram.attributeLocation("aTexCoord"))
+    }
+
+    private fun setColorUniform(program: ShaderProgram, color: Int) {
+        val a = ((color ushr 24) and 0xFF) / 255f
+        val r = ((color ushr 16) and 0xFF) / 255f
+        val g = ((color ushr 8) and 0xFF) / 255f
+        val b = (color and 0xFF) / 255f
+        GLES30.glUniform4f(program.uniformLocation("uColor"), r, g, b, a)
+    }
+
+    private fun setZoneUniforms(program: ShaderProgram, zone: SpawnZone) {
+        val zoneType = program.uniformLocation("uZoneType")
+        when (zone) {
+            is SpawnZone.FullScreen -> {
+                GLES30.glUniform1i(zoneType, 0)
+            }
+            is SpawnZone.Rect -> {
+                GLES30.glUniform1i(zoneType, 1)
+                GLES30.glUniform4f(program.uniformLocation("uZoneRect"), zone.x, zone.y, zone.width, zone.height)
+            }
+            is SpawnZone.Circle -> {
+                GLES30.glUniform1i(zoneType, 2)
+                GLES30.glUniform3f(program.uniformLocation("uZoneCircle"), zone.centerX, zone.centerY, zone.radius)
+            }
+        }
     }
 
     private fun applyBlendMode(mode: BlendMode) {

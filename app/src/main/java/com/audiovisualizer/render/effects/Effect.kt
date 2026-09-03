@@ -20,13 +20,17 @@ sealed class Effect {
 
     data class Fog(
         val density: Float = 0.5f,
+        val scale: Float = 1f,
         val zone: SpawnZone = SpawnZone.FullScreen,
         val color: Int = 0x80FFFFFF.toInt()
     ) : Effect()
 
     data class Glow(
         val intensity: Float = 1f,
-        val radius: Float = 8f
+        val radius: Float = 8f,
+        val scale: Float = 1f,
+        val zone: SpawnZone = SpawnZone.FullScreen,
+        val color: Int = 0xFFFFFFFF.toInt()
     ) : Effect()
 
     data class ChromaticAberration(

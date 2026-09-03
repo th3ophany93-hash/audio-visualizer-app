@@ -84,25 +84,48 @@ class LayerCompositorExportRenderTest {
         val buffer = ByteBuffer.allocateDirect(width * height * 4).order(ByteOrder.nativeOrder())
         GLES30.glReadPixels(0, 0, width, height, GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE, buffer)
 
-        // Average an 8x8 corner block rather than one pixel, so a stray
-        // particle landing on the sampled spot can't flake the assertion -
-        // only the image layer should show there either way.
-        var sumR = 0
-        var sumG = 0
-        var sumB = 0
-        var sampleCount = 0
-        for (y in 0 until 8) {
-            for (x in 0 until 8) {
-                val offset = (y * width + x) * 4
-                sumR += buffer.get(offset).toInt() and 0xFF
-                sumG += buffer.get(offset + 1).toInt() and 0xFF
-                sumB += buffer.get(offset + 2).toInt() and 0xFF
-                sampleCount++
+        // Particles now always carry some ambient motion of their own (the
+        // whole point of this task), so no fixed corner is guaranteed to be
+        // particle-free the way it would be with the old "zero without
+        // audio" behavior. Scan 8x8 blocks across the whole frame instead
+        // and require at least one that's close to the background color,
+        // and at least one bright block for the (ADD-blended, white)
+        // particles - proving both layers actually drew, without assuming
+        // where on screen either one landed.
+        var closestToBackground = Int.MAX_VALUE
+        var brightestBlock = 0
+        val blockSize = 8
+        var y = 0
+        while (y < height) {
+            var x = 0
+            while (x < width) {
+                var sumR = 0
+                var sumG = 0
+                var sumB = 0
+                var sampleCount = 0
+                for (by in 0 until blockSize) {
+                    for (bx in 0 until blockSize) {
+                        val offset = ((y + by) * width + (x + bx)) * 4
+                        sumR += buffer.get(offset).toInt() and 0xFF
+                        sumG += buffer.get(offset + 1).toInt() and 0xFF
+                        sumB += buffer.get(offset + 2).toInt() and 0xFF
+                        sampleCount++
+                    }
+                }
+                val r = sumR / sampleCount
+                val g = sumG / sampleCount
+                val b = sumB / sampleCount
+
+                val distanceToBackground = kotlin.math.abs(r - Color.red(backgroundColor)) +
+                    kotlin.math.abs(g - Color.green(backgroundColor)) +
+                    kotlin.math.abs(b - Color.blue(backgroundColor))
+                closestToBackground = minOf(closestToBackground, distanceToBackground)
+                brightestBlock = maxOf(brightestBlock, r + g + b)
+
+                x += blockSize
             }
+            y += blockSize
         }
-        val r = sumR / sampleCount
-        val g = sumG / sampleCount
-        val b = sumB / sampleCount
 
         compositor.release()
         eglSurface.release()
@@ -111,9 +134,14 @@ class LayerCompositorExportRenderTest {
         inputSurface.release()
 
         assertTrue(
-            "expected the background image's color (${Color.red(backgroundColor)}," +
-                "${Color.green(backgroundColor)},${Color.blue(backgroundColor)}), got rgb($r,$g,$b)",
-            r in 20..40 && g in 10..30 && b in 80..100
+            "expected some block close to the background image's color " +
+                "(${Color.red(backgroundColor)},${Color.green(backgroundColor)},${Color.blue(backgroundColor)}), " +
+                "closest distance was $closestToBackground",
+            closestToBackground < 40
+        )
+        assertTrue(
+            "expected some bright block from the white, ADD-blended particles, brightest sum was $brightestBlock",
+            brightestBlock > 400
         )
     }
 }

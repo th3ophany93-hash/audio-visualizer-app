@@ -1,0 +1,119 @@
+package com.audiovisualizer.render.gl
+
+import android.graphics.Bitmap
+import android.graphics.Color
+import android.media.MediaCodec
+import android.media.MediaCodecInfo
+import android.media.MediaFormat
+import android.net.Uri
+import android.opengl.GLES30
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import com.audiovisualizer.render.AudioBand
+import com.audiovisualizer.render.AudioBinding
+import com.audiovisualizer.render.AudioTarget
+import com.audiovisualizer.render.BlendMode
+import com.audiovisualizer.render.Layer
+import com.audiovisualizer.render.LayerSource
+import com.audiovisualizer.render.effects.Effect
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import org.junit.runner.RunWith
+import java.io.File
+import java.io.FileOutputStream
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+
+/**
+ * Proves [LayerCompositor] renders correctly into a MediaCodec video
+ * encoder's input surface - what [com.audiovisualizer.export.MediaCodecVideoExporter]
+ * actually draws into - independent of encoding, muxing and multi-frame
+ * timing: draws one image layer and one particle layer for a single frame,
+ * then reads the framebuffer straight back with glReadPixels.
+ *
+ * H.264-encoded output on this project's software-emulated test devices
+ * cannot be reliably decoded back for pixel inspection (MediaMetadataRetriever
+ * and ImageReader-based decode both hit emulator/software-decoder quirks
+ * unrelated to app correctness), so this test checks the same GL surface the
+ * encoder consumes directly instead of round-tripping through the codec.
+ */
+@RunWith(AndroidJUnit4::class)
+class LayerCompositorExportRenderTest {
+
+    @Test
+    fun drawsImageAndParticleLayersIntoEncoderInputSurface() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+
+        val backgroundColor = Color.rgb(30, 20, 90)
+        val imageFile = File(context.cacheDir, "compositor_export_bg.png")
+        Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888).apply {
+            eraseColor(backgroundColor)
+        }.let { bitmap -> FileOutputStream(imageFile).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) } }
+        val imageUri = Uri.fromFile(imageFile)
+
+        val width = 64
+        val height = 64
+        val videoFormat = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height).apply {
+            setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
+            setInteger(MediaFormat.KEY_BIT_RATE, 1_000_000)
+            setInteger(MediaFormat.KEY_FRAME_RATE, 30)
+            setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
+        }
+        val encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
+        encoder.configure(videoFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+        val inputSurface = encoder.createInputSurface()
+        encoder.start()
+
+        val eglSurface = EglRenderSurface(inputSurface)
+        eglSurface.makeCurrent()
+
+        val compositor = LayerCompositor(context)
+        compositor.init()
+        compositor.viewportChanged(width, height)
+
+        val imageLayer = Layer(id = "image", name = "Background", source = LayerSource.Image(imageUri))
+        val particleLayer = Layer(
+            id = "particles",
+            name = "Particles",
+            blendMode = BlendMode.ADD,
+            source = LayerSource.Particles(Effect.Particles(count = 200, size = 16f, speed = 1.5f, color = 0xFFFFFFFF.toInt())),
+            audioBinding = AudioBinding(band = AudioBand.BASS, target = AudioTarget.PARTICLE_SPAWN_RATE, sensitivity = 2f, smoothing = 0.2f)
+        )
+        compositor.drawFrame(listOf(imageLayer, particleLayer), null, deltaSeconds = 0.05f)
+
+        val buffer = ByteBuffer.allocateDirect(width * height * 4).order(ByteOrder.nativeOrder())
+        GLES30.glReadPixels(0, 0, width, height, GLES30.GL_RGBA, GLES30.GL_UNSIGNED_BYTE, buffer)
+
+        // Average an 8x8 corner block rather than one pixel, so a stray
+        // particle landing on the sampled spot can't flake the assertion -
+        // only the image layer should show there either way.
+        var sumR = 0
+        var sumG = 0
+        var sumB = 0
+        var sampleCount = 0
+        for (y in 0 until 8) {
+            for (x in 0 until 8) {
+                val offset = (y * width + x) * 4
+                sumR += buffer.get(offset).toInt() and 0xFF
+                sumG += buffer.get(offset + 1).toInt() and 0xFF
+                sumB += buffer.get(offset + 2).toInt() and 0xFF
+                sampleCount++
+            }
+        }
+        val r = sumR / sampleCount
+        val g = sumG / sampleCount
+        val b = sumB / sampleCount
+
+        compositor.release()
+        eglSurface.release()
+        encoder.stop()
+        encoder.release()
+        inputSurface.release()
+
+        assertTrue(
+            "expected the background image's color (${Color.red(backgroundColor)}," +
+                "${Color.green(backgroundColor)},${Color.blue(backgroundColor)}), got rgb($r,$g,$b)",
+            r in 20..40 && g in 10..30 && b in 80..100
+        )
+    }
+}

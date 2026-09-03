@@ -10,7 +10,7 @@ class VisualizerSurfaceView @JvmOverloads constructor(
     attrs: AttributeSet? = null
 ) : GLSurfaceView(context, attrs) {
 
-    val renderer = VisualizerRenderer()
+    val renderer = VisualizerRenderer(context.applicationContext)
 
     init {
         setEGLContextClientVersion(3)

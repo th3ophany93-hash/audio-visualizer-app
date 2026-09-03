@@ -15,6 +15,8 @@ import com.audiovisualizer.audio.AudioAnalysisResult
 import com.audiovisualizer.audio.AudioAnalyzer
 import com.audiovisualizer.audio.AudioPlaybackDriver
 import com.audiovisualizer.audio.AudioPlaybackSync
+import com.audiovisualizer.export.MediaCodecVideoExporter
+import com.audiovisualizer.export.VideoExporter
 import com.audiovisualizer.render.AudioBand
 import com.audiovisualizer.render.AudioBinding
 import com.audiovisualizer.render.AudioTarget
@@ -25,6 +27,7 @@ import com.audiovisualizer.render.effects.Effect
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.util.UUID
 
 /**
@@ -40,8 +43,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var layerAdapter: LayerListAdapter
 
     private var selectedAudioUri: Uri? = null
+    private var analysisResult: AudioAnalysisResult? = null
     private var mediaPlayer: MediaPlayer? = null
     private var playbackDriver: AudioPlaybackDriver? = null
+    private var exporter: MediaCodecVideoExporter? = null
 
     private val pickAudioLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@registerForActivityResult
@@ -80,8 +85,7 @@ class MainActivity : AppCompatActivity() {
             pickImageLauncher.launch(arrayOf("image/*"))
         }
         binding.exportButton.setOnClickListener {
-            Toast.makeText(this, getString(R.string.export_not_implemented), Toast.LENGTH_SHORT).show()
-            // TODO: wire up com.audiovisualizer.export.VideoExporter (MediaCodec + MediaMuxer).
+            exportVideo()
         }
     }
 
@@ -97,6 +101,7 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this@MainActivity, getString(R.string.analyzing_audio), Toast.LENGTH_SHORT).show()
             try {
                 val result = AudioAnalyzer(this@MainActivity).analyze(uri)
+                analysisResult = result
                 ensureBassParticleLayer()
                 startPlayback(uri, result)
             } catch (e: Exception) {
@@ -147,6 +152,49 @@ class MainActivity : AppCompatActivity() {
         binding.visualizerSurface.renderer.audioSync = sync
     }
 
+    /** Renders the current layer stack + analyzed audio to an MP4 in the app's external files dir. */
+    private fun exportVideo() {
+        val audioUri = selectedAudioUri
+        val analysis = analysisResult
+        if (audioUri == null || analysis == null) {
+            Toast.makeText(this, getString(R.string.export_needs_audio), Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val outputFile = File(getExternalFilesDir(null), "export_${System.currentTimeMillis()}.mp4")
+        val config = VideoExporter.ExportConfig(
+            outputUri = Uri.fromFile(outputFile),
+            layers = layers.toList(),
+            audioUri = audioUri,
+            audioAnalysis = analysis
+        )
+
+        Toast.makeText(this, getString(R.string.exporting), Toast.LENGTH_SHORT).show()
+        val activeExporter = MediaCodecVideoExporter(this)
+        exporter = activeExporter
+
+        lifecycleScope.launch(Dispatchers.Default) {
+            activeExporter.export(config, object : VideoExporter.ExportListener {
+                override fun onProgress(fractionDone: Float) {
+                    // TODO: surface progress in the UI once export has a dedicated screen.
+                }
+
+                override fun onComplete(outputUri: Uri) {
+                    runOnUiThread {
+                        Toast.makeText(this@MainActivity, getString(R.string.export_complete, outputFile.absolutePath), Toast.LENGTH_LONG).show()
+                    }
+                }
+
+                override fun onError(error: Throwable) {
+                    runOnUiThread {
+                        val message = error.message ?: error.toString()
+                        Toast.makeText(this@MainActivity, getString(R.string.export_failed, message), Toast.LENGTH_LONG).show()
+                    }
+                }
+            })
+        }
+    }
+
     private fun releasePlayback() {
         playbackDriver?.stop()
         playbackDriver = null
@@ -166,6 +214,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         releasePlayback()
+        exporter?.cancel()
         super.onDestroy()
     }
 }

@@ -1,5 +1,6 @@
 package com.audiovisualizer.render.gl
 
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.net.Uri
@@ -56,7 +57,16 @@ class VisualizerRenderScreenshotTest {
         }
         val imageUri = Uri.fromFile(imageFile)
 
-        val scenario = ActivityScenario.launch(MainActivity::class.java)
+        // ActivityScenario.launch(Class) resolves the activity's Intent
+        // against the wrong (test) package on some androidx.test versions;
+        // building the Intent explicitly against the target app's own
+        // package avoids that "Unable to resolve activity" failure.
+        val launchIntent = Intent(Intent.ACTION_MAIN).apply {
+            setClassName(appContext.packageName, MainActivity::class.java.name)
+            addCategory(Intent.CATEGORY_LAUNCHER)
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        }
+        val scenario = ActivityScenario.launch<MainActivity>(launchIntent)
         try {
             lateinit var view: VisualizerSurfaceView
 

@@ -44,12 +44,26 @@ class ParticleSystem(private val maxParticles: Int) {
         var toSpawn = params.count * (BASELINE_SPAWN_FRACTION + clampedIntensity) * deltaSeconds
 
         for (particle in particles) {
-            if (particle.life > 0f) {
+            var isDead = particle.life <= 0f
+            if (!isDead) {
                 particle.x += particle.vx * deltaSeconds
                 particle.y += particle.vy * deltaSeconds
                 particle.life -= deltaSeconds / LIFETIME_SECONDS
                 if (particle.life < 0f) particle.life = 0f
-            } else if (toSpawn >= 1f) {
+                // A particle whose life just ran out is eligible for
+                // respawn in this same pass. Without this, a particle can
+                // only be reused starting next frame (dead-this-frame still
+                // hits the "alive" branch above). Since every particle
+                // spawned during the pool's initial fill-up is born within
+                // the same short window, they'd all cross zero life
+                // together ~LIFETIME_SECONDS later; deferring their reuse
+                // by exactly one frame reproduces that same synchronized
+                // gap every cycle, which reads as the whole layer visibly
+                // pulsing at a ~LIFETIME_SECONDS period - independent of
+                // whatever the (smoothly-varying) intensity is doing.
+                isDead = particle.life <= 0f
+            }
+            if (isDead && toSpawn >= 1f) {
                 spawn(particle, params, clampedIntensity)
                 toSpawn -= 1f
             }

@@ -50,4 +50,38 @@ class ParticleSystemTest {
 
         assertEquals(0, system.activeCount)
     }
+
+    @Test
+    fun `active particle count does not oscillate under constant intensity`() {
+        // A regression test for a cohort-resonance bug: every particle
+        // spawned during the pool's initial fill-up was born in the same
+        // short window, so without a same-frame respawn they'd all cross
+        // zero life together roughly one lifetime later, then keep doing so
+        // every cycle - the whole layer visibly pulsing at ~LIFETIME_SECONDS
+        // (2.5s) regardless of how smoothly the driving intensity behaves.
+        // intensity=0 keeps the steady-state population (count * 0.2 baseline
+        // fraction * lifetime = 100 * 0.2 * 2.5 = 50) comfortably below the
+        // 100-particle cap, so this also exercises the below-capacity case
+        // (not just the pool sitting pegged at its ceiling).
+        val params = Effect.Particles(count = 100)
+        val system = ParticleSystem(maxParticles = 100)
+        val dt = 1f / 20f
+
+        val counts = mutableListOf<Int>()
+        var t = 0f
+        while (t < 15f) {
+            system.update(deltaSeconds = dt, params = params, intensity = 0f)
+            system.toVertexBuffer()
+            if (t > 4f) counts.add(system.activeCount) // past the initial fill-up transient
+            t += dt
+        }
+
+        val min = counts.min()
+        val max = counts.max()
+        assertTrue(
+            "expected activeCount to stay roughly steady under constant intensity, " +
+                "got min=$min max=$max (counts=$counts)",
+            max - min <= 2
+        )
+    }
 }

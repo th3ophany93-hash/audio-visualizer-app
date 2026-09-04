@@ -47,12 +47,21 @@ class LayerAnimator {
                 (ambientValue + boost * (1f - ambientValue)).coerceIn(0f, 1f)
             }
             ReactionMode.BEAT_PULSE -> {
+                // Unlike SMOOTH_CLIMAX (deliberately "ambient wander plus a
+                // rare boost", so it still feels alive with no audio at
+                // all), BEAT_PULSE is meant to be a *direct* read of the
+                // beat: the envelope alone, not blended with the
+                // independent ambient cycle. Blending it in here would mean
+                // a layer could read as "reacting" purely because its
+                // ambient phase happened to be high at that instant, with
+                // zero correlation to the music - precisely indistinguishable
+                // from AMBIENT_ONLY to a listener.
                 val target = (bandValue(tuning.band, frame) * tuning.sensitivity - tuning.threshold).coerceIn(0f, 1f)
                 val envelopeSeconds = (if (target > state.pulseEnvelope) tuning.attackSeconds else tuning.releaseSeconds)
                     .coerceAtLeast(0.001f)
                 val alpha = (deltaSeconds / envelopeSeconds).coerceIn(0f, 1f)
                 state.pulseEnvelope += (target - state.pulseEnvelope) * alpha
-                (ambientValue + state.pulseEnvelope * (1f - ambientValue)).coerceIn(0f, 1f)
+                state.pulseEnvelope
             }
         }
 

@@ -37,23 +37,37 @@ import kotlin.math.roundToInt
  */
 object LayerParamsPanel {
 
+    /** [ReactionTuning]'s own default attack/release - SMOOTH_CLIMAX's slow envelope. */
+    private val SLOW_TUNING = ReactionTuning()
+
+    /** A fast attack/release so BEAT_PULSE actually reads as pulsing to the beat. */
+    private val PUNCHY_TUNING = ReactionTuning(attackSeconds = 0.05f, releaseSeconds = 0.25f)
+
     fun render(context: Context, container: LinearLayout, layer: Layer, onChanged: () -> Unit) {
         container.removeAllViews()
+        val rerender = { render(context, container, layer, onChanged) }
         when (val source = layer.source) {
-            is LayerSource.Particles -> renderParticles(context, container, layer, source, onChanged)
-            is LayerSource.Fog -> renderFog(context, container, layer, source, onChanged)
-            is LayerSource.Glow -> renderGlow(context, container, layer, source, onChanged)
-            is LayerSource.ChromaticAberration -> renderChromaticAberration(context, container, layer, source, onChanged)
+            is LayerSource.Particles -> renderParticles(context, container, layer, source, onChanged, rerender)
+            is LayerSource.Fog -> renderFog(context, container, layer, source, onChanged, rerender)
+            is LayerSource.Glow -> renderGlow(context, container, layer, source, onChanged, rerender)
+            is LayerSource.ChromaticAberration -> renderChromaticAberration(context, container, layer, source, onChanged, rerender)
             is LayerSource.Image, is LayerSource.Video, is LayerSource.Shader -> {
                 container.addView(label(context, "У этого типа слоя пока нет настраиваемых параметров."))
             }
         }
     }
 
-    private fun renderParticles(context: Context, container: LinearLayout, layer: Layer, source: LayerSource.Particles, onChanged: () -> Unit) {
+    private fun renderParticles(
+        context: Context,
+        container: LinearLayout,
+        layer: Layer,
+        source: LayerSource.Particles,
+        onChanged: () -> Unit,
+        rerender: () -> Unit
+    ) {
         baseSection(context, container, layer, onChanged)
         movementSection(context, container, layer, onChanged, enabled = false) // particles use their own speed/gravity instead
-        reactionSection(context, container, layer, onChanged)
+        reactionSection(context, container, layer, onChanged, rerender)
 
         sectionHeader(context, container, "Частицы")
         var params = source.params
@@ -75,10 +89,17 @@ object LayerParamsPanel {
         sliderRow(context, container, label, min.toFloat(), max.toFloat(), initial.toFloat(), 0) { onChange(it.roundToInt()) }
     }
 
-    private fun renderFog(context: Context, container: LinearLayout, layer: Layer, source: LayerSource.Fog, onChanged: () -> Unit) {
+    private fun renderFog(
+        context: Context,
+        container: LinearLayout,
+        layer: Layer,
+        source: LayerSource.Fog,
+        onChanged: () -> Unit,
+        rerender: () -> Unit
+    ) {
         baseSection(context, container, layer, onChanged)
         movementSection(context, container, layer, onChanged, enabled = true)
-        reactionSection(context, container, layer, onChanged)
+        reactionSection(context, container, layer, onChanged, rerender)
 
         sectionHeader(context, container, "Туман")
         var params = source.params
@@ -93,10 +114,17 @@ object LayerParamsPanel {
         sliderRow(context, container, "Дрейф Y (ветер)", -0.5f, 0.5f, params.driftSpeedY, 3) { v -> update { it.copy(driftSpeedY = v) } }
     }
 
-    private fun renderGlow(context: Context, container: LinearLayout, layer: Layer, source: LayerSource.Glow, onChanged: () -> Unit) {
+    private fun renderGlow(
+        context: Context,
+        container: LinearLayout,
+        layer: Layer,
+        source: LayerSource.Glow,
+        onChanged: () -> Unit,
+        rerender: () -> Unit
+    ) {
         baseSection(context, container, layer, onChanged)
         movementSection(context, container, layer, onChanged, enabled = true)
-        reactionSection(context, container, layer, onChanged)
+        reactionSection(context, container, layer, onChanged, rerender)
 
         sectionHeader(context, container, "Свечение")
         var params = source.params
@@ -109,9 +137,16 @@ object LayerParamsPanel {
         sliderRow(context, container, "Радиус", 1f, 60f, params.radius, 1) { v -> update { it.copy(radius = v) } }
     }
 
-    private fun renderChromaticAberration(context: Context, container: LinearLayout, layer: Layer, source: LayerSource.ChromaticAberration, onChanged: () -> Unit) {
+    private fun renderChromaticAberration(
+        context: Context,
+        container: LinearLayout,
+        layer: Layer,
+        source: LayerSource.ChromaticAberration,
+        onChanged: () -> Unit,
+        rerender: () -> Unit
+    ) {
         baseSection(context, container, layer, onChanged, showColor = false)
-        reactionSection(context, container, layer, onChanged)
+        reactionSection(context, container, layer, onChanged, rerender)
 
         sectionHeader(context, container, "Хроматическая аберрация")
         var params = source.params
@@ -162,7 +197,7 @@ object LayerParamsPanel {
         sliderRow(context, container, "Направление (рад.)", -3.14f, 3.14f, params.movement.direction, 2) { v -> update { it.copy(direction = v) } }
     }
 
-    private fun reactionSection(context: Context, container: LinearLayout, layer: Layer, onChanged: () -> Unit) {
+    private fun reactionSection(context: Context, container: LinearLayout, layer: Layer, onChanged: () -> Unit, rerender: () -> Unit) {
         sectionHeader(context, container, "Реакция на звук")
         var params = layer.effectParams
         fun update(transform: (EffectParams) -> EffectParams) {
@@ -175,7 +210,23 @@ object LayerParamsPanel {
         }
 
         spinnerRow(context, container, "Режим реакции", ReactionMode.entries.map { it.name }, params.reactionMode.ordinal) { i ->
-            update { it.copy(reactionMode = ReactionMode.entries[i]) }
+            val newMode = ReactionMode.entries[i]
+            // BEAT_PULSE needs a fast attack/release to actually read as
+            // "pulsing to the beat" - SMOOTH_CLIMAX's slow envelope (the
+            // shared ReactionTuning default) makes every mode look like the
+            // same gentle ambient drift within a normal test session. Only
+            // swap the preset when the tuning still matches the mode being
+            // left, so a deliberately hand-tuned value is never clobbered.
+            val tuning = params.reactionTuning
+            val adjustedTuning = when {
+                newMode == ReactionMode.BEAT_PULSE && tuning.attackSeconds == SLOW_TUNING.attackSeconds && tuning.releaseSeconds == SLOW_TUNING.releaseSeconds ->
+                    tuning.copy(attackSeconds = PUNCHY_TUNING.attackSeconds, releaseSeconds = PUNCHY_TUNING.releaseSeconds)
+                newMode != ReactionMode.BEAT_PULSE && tuning.attackSeconds == PUNCHY_TUNING.attackSeconds && tuning.releaseSeconds == PUNCHY_TUNING.releaseSeconds ->
+                    tuning.copy(attackSeconds = SLOW_TUNING.attackSeconds, releaseSeconds = SLOW_TUNING.releaseSeconds)
+                else -> tuning
+            }
+            update { it.copy(reactionMode = newMode, reactionTuning = adjustedTuning) }
+            rerender()
         }
         switchRow(context, container, "Мерцание на удар (beat flicker)", params.beatFlicker) { v -> update { it.copy(beatFlicker = v) } }
 

@@ -4,14 +4,19 @@ import android.content.Intent
 import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Bundle
+import android.widget.LinearLayout
 import android.widget.PopupMenu
+import android.widget.ProgressBar
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.audiovisualizer.app.R
 import com.audiovisualizer.app.databinding.ActivityMainBinding
+import com.audiovisualizer.audio.AnalysisStage
 import com.audiovisualizer.audio.AudioAnalysisResult
 import com.audiovisualizer.audio.AudioAnalyzer
 import com.audiovisualizer.audio.AudioPlaybackDriver
@@ -30,6 +35,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
+import kotlin.math.roundToInt
 
 /**
  * Entry screen and the app's minimal end-to-end demo: pick an audio track
@@ -151,20 +157,74 @@ class MainActivity : AppCompatActivity() {
         binding.visualizerSurface.renderer.layers = layers.toList()
     }
 
-    /** Analyzes the picked track, makes sure the demo particle layer exists, then starts playback. */
+    private var analysisProgressDialog: AlertDialog? = null
+    private var analysisProgressText: TextView? = null
+    private var analysisProgressBar: ProgressBar? = null
+
+    /**
+     * Analyzes the picked track, makes sure the demo particle layer exists,
+     * then starts playback. UX spec section 1: shows a non-cancelable
+     * progress dialog with an explicit stage label + determinate bar for
+     * the whole analysis, rather than a bare spinner or a fire-and-forget
+     * Toast - and a clear completion signal once it's done.
+     */
     private fun loadAudio(uri: Uri) {
         lifecycleScope.launch {
-            Toast.makeText(this@MainActivity, getString(R.string.analyzing_audio), Toast.LENGTH_SHORT).show()
+            showAnalysisProgressDialog()
             try {
-                val result = AudioAnalyzer(this@MainActivity).analyze(uri)
+                val result = AudioAnalyzer(this@MainActivity).analyze(uri) { stage, fraction ->
+                    runOnUiThread { updateAnalysisProgress(stage, fraction) }
+                }
                 analysisResult = result
                 ensureBassParticleLayer()
                 startPlayback(uri, result)
+                dismissAnalysisProgressDialog()
+                Toast.makeText(this@MainActivity, getString(R.string.analysis_complete), Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
+                dismissAnalysisProgressDialog()
                 val message = e.message ?: e.toString()
                 Toast.makeText(this@MainActivity, getString(R.string.analysis_failed, message), Toast.LENGTH_LONG).show()
             }
         }
+    }
+
+    private fun showAnalysisProgressDialog() {
+        val paddingPx = (16 * resources.displayMetrics.density).roundToInt()
+        val text = TextView(this).apply { text = getString(R.string.analysis_stage_decoding) }
+        val bar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+            max = 100
+            progress = 0
+            isIndeterminate = false
+        }
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(paddingPx, paddingPx, paddingPx, paddingPx)
+            addView(text)
+            addView(bar)
+        }
+        analysisProgressText = text
+        analysisProgressBar = bar
+        analysisProgressDialog = AlertDialog.Builder(this)
+            .setTitle(getString(R.string.analyzing_audio))
+            .setView(layout)
+            .setCancelable(false)
+            .show()
+    }
+
+    private fun updateAnalysisProgress(stage: AnalysisStage, fraction: Float) {
+        analysisProgressText?.text = when (stage) {
+            AnalysisStage.DECODING -> getString(R.string.analysis_stage_decoding)
+            AnalysisStage.ANALYZING -> getString(R.string.analysis_stage_analyzing)
+            AnalysisStage.DONE -> getString(R.string.analysis_stage_done)
+        }
+        analysisProgressBar?.progress = (fraction.coerceIn(0f, 1f) * 100).roundToInt()
+    }
+
+    private fun dismissAnalysisProgressDialog() {
+        analysisProgressDialog?.dismiss()
+        analysisProgressDialog = null
+        analysisProgressText = null
+        analysisProgressBar = null
     }
 
     /** Adds the demo layer once: particles on top of everything else, driven by the bass band. */
@@ -269,6 +329,7 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         releasePlayback()
         exporter?.cancel()
+        dismissAnalysisProgressDialog()
         super.onDestroy()
     }
 }

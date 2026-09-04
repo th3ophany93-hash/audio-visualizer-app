@@ -13,7 +13,11 @@
     <string name="layers_title">Слои</string>
     <string name="no_layers">Нет слоёв. Добавьте слой, чтобы начать.</string>
     <string name="add_layer">Добавить слой</string>
-    <string name="analyzing_audio">Анализ аудио…</string>
+    <string name="analyzing_audio">Анализ аудио</string>
+    <string name="analysis_stage_decoding">Декодирование…</string>
+    <string name="analysis_stage_analyzing">Анализ частот…</string>
+    <string name="analysis_stage_done">Готово</string>
+    <string name="analysis_complete">Аудио проанализировано</string>
     <string name="analysis_failed">Ошибка анализа: %1$s</string>
     <string name="export_needs_audio">Сначала выберите аудио</string>
     <string name="exporting">Экспорт в MP4…</string>

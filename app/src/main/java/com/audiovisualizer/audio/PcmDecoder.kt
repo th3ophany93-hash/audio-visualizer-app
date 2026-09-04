@@ -17,7 +17,8 @@ class PcmDecoder(private val context: Context) {
         val durationMs: Long
     )
 
-    fun decode(uri: Uri): PcmAudio {
+    /** [onProgress] is called with a 0..1 fraction of the track decoded so far - best-effort, based on presentation time vs the track's reported duration. */
+    fun decode(uri: Uri, onProgress: (Float) -> Unit = {}): PcmAudio {
         val extractor = MediaExtractor()
         try {
             extractor.setDataSource(context, uri, null)
@@ -56,6 +57,7 @@ class PcmDecoder(private val context: Context) {
                             val presentationTimeUs = extractor.sampleTime
                             codec.queueInputBuffer(inputIndex, 0, sampleSize, presentationTimeUs, 0)
                             extractor.advance()
+                            if (durationUs > 0) onProgress((presentationTimeUs.toFloat() / durationUs).coerceIn(0f, 1f))
                         }
                     }
                 }

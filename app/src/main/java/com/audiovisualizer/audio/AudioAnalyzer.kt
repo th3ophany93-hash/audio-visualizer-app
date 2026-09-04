@@ -5,6 +5,9 @@ import android.net.Uri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+/** UX spec section 1: the coarse stage a caller can show to the user while [AudioAnalyzer.analyze] runs. */
+enum class AnalysisStage { DECODING, ANALYZING, DONE }
+
 /**
  * Decodes an audio file and produces, per analysis frame, normalized
  * bass/mid/treble energy and onset (beat/hit) detection over time - the
@@ -12,13 +15,25 @@ import kotlinx.coroutines.withContext
  */
 class AudioAnalyzer(private val context: Context) {
 
-    suspend fun analyze(uri: Uri, config: AnalysisConfig = AnalysisConfig()): AudioAnalysisResult =
+    /** [onProgress] (stage, 0..1 fraction within that stage) is called from whatever thread the analysis runs on - marshal to the UI thread yourself if updating views. */
+    suspend fun analyze(
+        uri: Uri,
+        config: AnalysisConfig = AnalysisConfig(),
+        onProgress: (AnalysisStage, Float) -> Unit = { _, _ -> }
+    ): AudioAnalysisResult =
         withContext(Dispatchers.Default) {
-            val pcm = PcmDecoder(context).decode(uri)
-            analyzePcm(pcm, config)
+            onProgress(AnalysisStage.DECODING, 0f)
+            val pcm = PcmDecoder(context).decode(uri) { fraction -> onProgress(AnalysisStage.DECODING, fraction) }
+            val result = analyzePcm(pcm, config, onProgress)
+            onProgress(AnalysisStage.DONE, 1f)
+            result
         }
 
-    private fun analyzePcm(pcm: PcmDecoder.PcmAudio, config: AnalysisConfig): AudioAnalysisResult {
+    private fun analyzePcm(
+        pcm: PcmDecoder.PcmAudio,
+        config: AnalysisConfig,
+        onProgress: (AnalysisStage, Float) -> Unit
+    ): AudioAnalysisResult {
         val fftSize = config.fftSize
         val binCount = fftSize / 2
         val window = WindowFunction.hann(fftSize)
@@ -39,7 +54,14 @@ class AudioAnalyzer(private val context: Context) {
 
         val samples = pcm.samples
         var offset = 0
+        var framesSinceProgressReport = 0
+        onProgress(AnalysisStage.ANALYZING, 0f)
         while (offset + fftSize <= samples.size) {
+            // Reporting every frame would call back thousands of times for a typical track; every 32 is frequent enough for a smooth-looking progress bar.
+            if (framesSinceProgressReport++ >= 32) {
+                framesSinceProgressReport = 0
+                onProgress(AnalysisStage.ANALYZING, (offset.toFloat() / samples.size).coerceIn(0f, 1f))
+            }
             for (i in 0 until fftSize) {
                 real[i] = samples[offset + i] * window[i]
                 imag[i] = 0f

@@ -14,6 +14,8 @@ import android.widget.TextView
 import androidx.appcompat.app.AlertDialog
 import com.audiovisualizer.render.AudioBand
 import com.audiovisualizer.render.BlendMode
+import com.audiovisualizer.render.FitMode
+import com.audiovisualizer.render.ImageTransform
 import com.audiovisualizer.render.Layer
 import com.audiovisualizer.render.LayerSource
 import com.audiovisualizer.render.effects.ColorSpec
@@ -51,7 +53,8 @@ object LayerParamsPanel {
             is LayerSource.Fog -> renderFog(context, container, layer, source, onChanged, rerender)
             is LayerSource.Glow -> renderGlow(context, container, layer, source, onChanged, rerender)
             is LayerSource.ChromaticAberration -> renderChromaticAberration(context, container, layer, source, onChanged, rerender)
-            is LayerSource.Image, is LayerSource.Video, is LayerSource.Shader -> {
+            is LayerSource.Image -> renderImageTransform(context, container, layer, source, onChanged)
+            is LayerSource.Video, is LayerSource.Shader -> {
                 container.addView(label(context, "У этого типа слоя пока нет настраиваемых параметров."))
             }
         }
@@ -155,6 +158,30 @@ object LayerParamsPanel {
             layer.source = LayerSource.ChromaticAberration(params)
             onChanged()
         }
+    }
+
+    /** UX spec section 4: manual position/rotation/scale + fit mode for an image/video background layer. */
+    private fun renderImageTransform(context: Context, container: LinearLayout, layer: Layer, source: LayerSource.Image, onChanged: () -> Unit) {
+        sectionHeader(context, container, "Трансформация")
+        var transform = source.transform
+        fun update(change: (ImageTransform) -> ImageTransform) {
+            transform = change(transform)
+            layer.source = LayerSource.Image(source.uri, transform)
+            onChanged()
+        }
+
+        container.addView(label(context, "Перетаскивание одним пальцем двигает картинку; двумя - масштаб и поворот."))
+
+        val fitModeNames = listOf("Заполнить (Fill)", "Вписать (Fit)", "Растянуть (Stretch)")
+        spinnerRow(context, container, "Режим вписывания", fitModeNames, transform.fitMode.ordinal) { i ->
+            update { it.copy(fitMode = FitMode.entries[i]) }
+        }
+        sliderRow(context, container, "Позиция X", -2f, 2f, transform.positionX, 2) { v -> update { it.copy(positionX = v) } }
+        sliderRow(context, container, "Позиция Y", -2f, 2f, transform.positionY, 2) { v -> update { it.copy(positionY = v) } }
+        sliderRow(context, container, "Поворот (град.)", -180f, 180f, Math.toDegrees(transform.rotationRadians.toDouble()).toFloat(), 1) { v ->
+            update { it.copy(rotationRadians = Math.toRadians(v.toDouble()).toFloat()) }
+        }
+        sliderRow(context, container, "Масштаб", 0.1f, 5f, transform.scale, 2) { v -> update { it.copy(scale = v) } }
     }
 
     // ---- Universal sections -------------------------------------------------

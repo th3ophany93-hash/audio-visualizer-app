@@ -49,6 +49,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.ktx)
     implementation(libs.androidx.recyclerview)
+    implementation(libs.androidx.exifinterface)
     implementation(libs.kotlinx.coroutines.android)
 
     testImplementation(libs.junit)

@@ -6,6 +6,7 @@ import android.opengl.Matrix
 import com.audiovisualizer.audio.AudioFrame
 import com.audiovisualizer.render.AudioTarget
 import com.audiovisualizer.render.BlendMode
+import com.audiovisualizer.render.ImageFit
 import com.audiovisualizer.render.Layer
 import com.audiovisualizer.render.LayerSource
 import com.audiovisualizer.render.effects.ColorSpec
@@ -51,7 +52,7 @@ class LayerCompositor(private val context: Context) {
 
     private val bindingResolver = AudioBindingResolver()
     private val layerAnimator = LayerAnimator()
-    private val textureCache = HashMap<String, Int>()
+    private val textureCache = HashMap<String, LoadedTexture>()
     private val particleSystems = HashMap<String, ParticleSystem>()
     private val fogDriftAnimators = HashMap<String, FogDriftAnimator>()
     private val identityMvp = FloatArray(16).also { Matrix.setIdentityM(it, 0) }
@@ -178,7 +179,7 @@ class LayerCompositor(private val context: Context) {
     /** Releases cached GL resources. Call while the GL context that created them is still current. */
     fun release() {
         if (textureCache.isNotEmpty()) {
-            GLES30.glDeleteTextures(textureCache.size, textureCache.values.toIntArray(), 0)
+            GLES30.glDeleteTextures(textureCache.size, textureCache.values.map { it.id }.toIntArray(), 0)
             textureCache.clear()
         }
         particleSystems.clear()
@@ -195,22 +196,27 @@ class LayerCompositor(private val context: Context) {
     }
 
     private fun drawImageLayer(layer: Layer, source: LayerSource.Image, intensity: Float) {
-        val textureId = textureCache.getOrPut(layer.id) {
+        val texture = textureCache.getOrPut(layer.id) {
             TextureLoader.loadFromUri(context, source.uri)
         }
 
         val binding = layer.audioBinding
         val opacity = if (binding?.target == AudioTarget.OPACITY) intensity else 1f
-        val scale = if (binding?.target == AudioTarget.SCALE) 1f + intensity else 1f
+        val audioScale = if (binding?.target == AudioTarget.SCALE) 1f + intensity else 1f
+
+        val transform = source.transform
+        val (fitScaleX, fitScaleY) = ImageFit.scale(texture.width, texture.height, viewportWidth, viewportHeight, transform.fitMode)
 
         Matrix.setIdentityM(scratchMvp, 0)
-        if (scale != 1f) {
-            Matrix.scaleM(scratchMvp, 0, scale, scale, 1f)
+        Matrix.translateM(scratchMvp, 0, transform.positionX, transform.positionY, 0f)
+        if (transform.rotationRadians != 0f) {
+            Matrix.rotateM(scratchMvp, 0, Math.toDegrees(transform.rotationRadians.toDouble()).toFloat(), 0f, 0f, 1f)
         }
+        Matrix.scaleM(scratchMvp, 0, fitScaleX * transform.scale * audioScale, fitScaleY * transform.scale * audioScale, 1f)
 
         imageProgram.use()
         GLES30.glActiveTexture(GLES30.GL_TEXTURE0)
-        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, textureId)
+        GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, texture.id)
         GLES30.glUniform1i(imageProgram.uniformLocation("uTexture"), 0)
         GLES30.glUniform1f(imageProgram.uniformLocation("uOpacity"), opacity)
         GLES30.glUniformMatrix4fv(imageProgram.uniformLocation("uMVP"), 1, false, scratchMvp, 0)

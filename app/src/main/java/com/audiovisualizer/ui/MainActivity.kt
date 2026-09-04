@@ -58,8 +58,18 @@ class MainActivity : AppCompatActivity() {
     private val pickAudioLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@registerForActivityResult
         contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        selectedAudioUri = uri
-        loadAudio(uri)
+        // UX spec section 2: every picked track goes through the trim step
+        // first: trimAudioLauncher's callback below picks up the result.
+        trimAudioLauncher.launch(
+            Intent(this, AudioTrimActivity::class.java).putExtra(AudioTrimActivity.EXTRA_AUDIO_URI, uri.toString())
+        )
+    }
+
+    private val trimAudioLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val trimmedUriString = result.data?.getStringExtra(AudioTrimActivity.EXTRA_TRIMMED_AUDIO_URI) ?: return@registerForActivityResult
+        val trimmedUri = Uri.parse(trimmedUriString)
+        selectedAudioUri = trimmedUri
+        loadAudio(trimmedUri)
     }
 
     private val pickImageLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->

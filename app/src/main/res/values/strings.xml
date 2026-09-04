@@ -23,4 +23,15 @@
     <string name="exporting">Экспорт в MP4…</string>
     <string name="export_complete">Готово: %1$s</string>
     <string name="export_failed">Ошибка экспорта: %1$s</string>
+
+    <string name="trim_title">Обрезка аудио</string>
+    <string name="trim_loading_waveform">Построение waveform…</string>
+    <string name="trim_load_failed">Не удалось загрузить аудио: %1$s</string>
+    <string name="trim_play">▶ Играть</string>
+    <string name="trim_pause">⏸ Пауза</string>
+    <string name="trim_selection_range">%1$s – %2$s</string>
+    <string name="trim_apply">Обрезать/Применить</string>
+    <string name="trim_cancel">Отмена</string>
+    <string name="trim_processing">Обработка…</string>
+    <string name="trim_failed">Не удалось обрезать: %1$s</string>
 </resources>

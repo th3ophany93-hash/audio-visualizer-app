@@ -5,11 +5,12 @@ precision mediump float;
 // another layer's texture): a drifting fractal-noise cloud, confined to a
 // zone, composited via the layer's own blend mode like any other layer.
 //
-// The drift speed and pattern are driven only by uTime - never by audio -
-// per the "no beat pulsing" rule. uIntensity is the only audio-influenced
-// input, and it already carries the ambient-wander + rare-climax-boost
-// blend computed on the CPU side (see LayerAnimator), so by the time it
-// reaches this shader it's a slow-moving value, not a per-beat one.
+// uOffset - where the noise pattern is sampled from - is computed on the
+// CPU side by FogDriftAnimator: its own ambient heading/speed cycle at all
+// times, plus a smoothed (multi-second, never per-beat) bass/mid/treble
+// nudge. uIntensity is a separate audio-influenced input carrying the
+// ambient-wander + rare-climax-boost blend from LayerAnimator, so by the
+// time either reaches this shader it's already a slow-moving value.
 
 in vec2 vTexCoord;
 out vec4 fragColor;
@@ -17,7 +18,7 @@ out vec4 fragColor;
 uniform float uDensity;    // Effect.Fog.density - manual overall opacity
 uniform float uScale;      // Effect.Fog.scale - manual spatial size of the cloud pattern
 uniform vec4 uColor;       // Effect.Fog.color, rgb + alpha strength
-uniform float uTime;       // seconds, this layer's own clock - drives drift only
+uniform vec2 uOffset;      // this layer's fbm noise-space drift offset, from FogDriftAnimator
 uniform float uIntensity;  // 0..1 ambient-wander + rare-climax value from LayerAnimator
 
 uniform int uZoneType;     // 0 = full screen, 1 = rect, 2 = circle
@@ -65,7 +66,7 @@ float zoneMask(vec2 uv) {
 
 void main() {
     vec2 zoneUv = vec2(vTexCoord.x, 1.0 - vTexCoord.y);
-    vec2 driftedUv = vTexCoord * (4.0 * max(uScale, 0.05)) + vec2(uTime * 0.015, uTime * 0.008);
+    vec2 driftedUv = vTexCoord * (4.0 * max(uScale, 0.05)) + uOffset;
     float n = fbm(driftedUv);
 
     float fogAmount = smoothstep(0.35, 0.85, n) * uDensity * (0.4 + 0.6 * uIntensity);

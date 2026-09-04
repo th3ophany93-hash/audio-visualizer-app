@@ -41,6 +41,7 @@ class LayerCompositor(private val context: Context) {
     private val layerAnimator = LayerAnimator()
     private val textureCache = HashMap<String, Int>()
     private val particleSystems = HashMap<String, ParticleSystem>()
+    private val fogDriftAnimators = HashMap<String, FogDriftAnimator>()
     private val identityMvp = FloatArray(16).also { Matrix.setIdentityM(it, 0) }
     private val scratchMvp = FloatArray(16)
 
@@ -70,6 +71,7 @@ class LayerCompositor(private val context: Context) {
         // GL resources from a previous context (e.g. before a surface recreation) are gone.
         textureCache.clear()
         particleSystems.clear()
+        fogDriftAnimators.clear()
     }
 
     fun viewportChanged(width: Int, height: Int) {
@@ -95,7 +97,9 @@ class LayerCompositor(private val context: Context) {
                 }
                 is LayerSource.Fog -> {
                     val animation = layerAnimator.update(layer.id, layer.audioBinding, audioFrame, deltaSeconds)
-                    drawFogLayer(source, animation)
+                    val drift = fogDriftAnimators.getOrPut(layer.id) { FogDriftAnimator(layer.id.hashCode().toLong()) }
+                        .update(deltaSeconds, animation.elapsedSeconds, audioFrame)
+                    drawFogLayer(source, animation, drift)
                 }
                 is LayerSource.Glow -> {
                     val animation = layerAnimator.update(layer.id, layer.audioBinding, audioFrame, deltaSeconds)
@@ -116,6 +120,7 @@ class LayerCompositor(private val context: Context) {
             textureCache.clear()
         }
         particleSystems.clear()
+        fogDriftAnimators.clear()
         if (::imageProgram.isInitialized) imageProgram.release()
         if (::particleProgram.isInitialized) particleProgram.release()
         if (::fogProgram.isInitialized) fogProgram.release()
@@ -186,13 +191,13 @@ class LayerCompositor(private val context: Context) {
         GLES30.glDisableVertexAttribArray(lifeAttr)
     }
 
-    private fun drawFogLayer(source: LayerSource.Fog, animation: LayerAnimator.Result) {
+    private fun drawFogLayer(source: LayerSource.Fog, animation: LayerAnimator.Result, drift: FogDriftAnimator.Result) {
         val params = source.params
         fogProgram.use()
         GLES30.glUniformMatrix4fv(fogProgram.uniformLocation("uMVP"), 1, false, identityMvp, 0)
         GLES30.glUniform1f(fogProgram.uniformLocation("uDensity"), params.density)
         GLES30.glUniform1f(fogProgram.uniformLocation("uScale"), params.scale)
-        GLES30.glUniform1f(fogProgram.uniformLocation("uTime"), animation.elapsedSeconds)
+        GLES30.glUniform2f(fogProgram.uniformLocation("uOffset"), drift.offsetX, drift.offsetY)
         GLES30.glUniform1f(fogProgram.uniformLocation("uIntensity"), animation.intensity)
         setColorUniform(fogProgram, params.color)
         setZoneUniforms(fogProgram, params.zone)

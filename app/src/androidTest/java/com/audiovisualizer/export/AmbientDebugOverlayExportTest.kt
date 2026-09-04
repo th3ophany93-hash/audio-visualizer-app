@@ -25,6 +25,7 @@ import com.audiovisualizer.render.LayerSource
 import com.audiovisualizer.render.effects.Effect
 import com.audiovisualizer.render.effects.SpawnZone
 import com.audiovisualizer.render.gl.EglRenderSurface
+import com.audiovisualizer.render.gl.FogDriftAnimator
 import com.audiovisualizer.render.gl.LayerAnimator
 import com.audiovisualizer.render.gl.LayerCompositor
 import com.audiovisualizer.render.gl.QuadMesh
@@ -99,14 +100,16 @@ class AmbientDebugOverlayExportTest {
         compositor.init()
         compositor.viewportChanged(width, height)
 
-        // A second, independent LayerAnimator computing the exact same
-        // numbers the compositor's internal one does (same layer ids, same
-        // deltaSeconds and audio frame each call), purely so this test can
-        // read them out for the overlay text without needing to expose
+        // A second, independent LayerAnimator (and, for fog, a
+        // FogDriftAnimator seeded exactly like LayerCompositor seeds its
+        // internal one - layer.id.hashCode()) computing the exact same
+        // numbers the compositor's internal ones do, purely so this test
+        // can read them out for the overlay text without needing to expose
         // LayerCompositor's private state.
         val debugAnimator = LayerAnimator()
+        val debugFogDrift = FogDriftAnimator(fogLayer.id.hashCode().toLong())
 
-        val overlay = TextOverlayRenderer(context, width, overlayHeight = 110)
+        val overlay = TextOverlayRenderer(context, width, overlayHeight = 140)
 
         val outputFile = File(context.getExternalFilesDir(null), "ambient_debug_overlay.mp4")
         outputFile.delete()
@@ -152,9 +155,11 @@ class AmbientDebugOverlayExportTest {
 
             val particlesResult = debugAnimator.update("particles", particleLayer.audioBinding, null, dt)
             val fogResult = debugAnimator.update("fog", fogLayer.audioBinding, null, dt)
+            val fogDrift = debugFogDrift.update(dt, fogResult.elapsedSeconds, null)
             overlay.draw(
                 line1 = "PARTICLES  t=%6.2fs  intensity=%.3f".format(particlesResult.elapsedSeconds, particlesResult.intensity),
-                line2 = "FOG        t=%6.2fs  intensity=%.3f".format(fogResult.elapsedSeconds, fogResult.intensity)
+                line2 = "FOG        t=%6.2fs  intensity=%.3f".format(fogResult.elapsedSeconds, fogResult.intensity),
+                line3 = "FOG-DRIFT  offsetX=%7.4f  offsetY=%7.4f".format(fogDrift.offsetX, fogDrift.offsetY)
             )
 
             eglSurface.setPresentationTimeNanos(frameIndex * frameDurationNanos)
@@ -231,14 +236,15 @@ class AmbientDebugOverlayExportTest {
             GLES30.glTexParameteri(GLES30.GL_TEXTURE_2D, GLES30.GL_TEXTURE_WRAP_T, GLES30.GL_CLAMP_TO_EDGE)
 
             Matrix.setIdentityM(mvp, 0)
-            Matrix.translateM(mvp, 0, 0f, 0.72f, 0f)
-            Matrix.scaleM(mvp, 0, 1f, 0.28f, 1f)
+            Matrix.translateM(mvp, 0, 0f, 0.64f, 0f)
+            Matrix.scaleM(mvp, 0, 1f, 0.36f, 1f)
         }
 
-        fun draw(line1: String, line2: String) {
+        fun draw(line1: String, line2: String, line3: String) {
             canvas.drawRect(0f, 0f, videoWidth.toFloat(), overlayHeight.toFloat(), backgroundPaint)
-            canvas.drawText(line1, 8f, 40f, textPaint)
-            canvas.drawText(line2, 8f, 75f, textPaint)
+            canvas.drawText(line1, 8f, 35f, textPaint)
+            canvas.drawText(line2, 8f, 65f, textPaint)
+            canvas.drawText(line3, 8f, 95f, textPaint)
 
             GLES30.glBindTexture(GLES30.GL_TEXTURE_2D, textureId)
             GLUtils.texImage2D(GLES30.GL_TEXTURE_2D, 0, bitmap, 0)

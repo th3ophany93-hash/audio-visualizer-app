@@ -25,7 +25,9 @@ class ClimaxDetector(
     private val baselineWindowSeconds: Float = 35f,
     private val riseSeconds: Float = 4f,
     private val fallSeconds: Float = 10f,
-    private val excessScale: Float = 4f
+    private val excessScale: Float = 4f,
+    /** Subtracted from the current-vs-baseline excess before scaling - a noise-gate margin. 0 = old behavior. */
+    private val threshold: Float = 0f
 ) {
     private var current = 0f
     private var baseline = 0f
@@ -40,7 +42,7 @@ class ClimaxDetector(
         current += (bandValue - current) * currentAlpha
         baseline += (bandValue - baseline) * baselineAlpha
 
-        val excess = (current - baseline).coerceAtLeast(0f)
+        val excess = (current - baseline - threshold).coerceAtLeast(0f)
         val target = (excess * excessScale).coerceIn(0f, 1f)
 
         val envelopeSeconds = if (target > boost) riseSeconds else fallSeconds

@@ -17,12 +17,14 @@ import android.opengl.Matrix
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.audiovisualizer.render.AudioBand
-import com.audiovisualizer.render.AudioBinding
-import com.audiovisualizer.render.AudioTarget
 import com.audiovisualizer.render.BlendMode
 import com.audiovisualizer.render.Layer
 import com.audiovisualizer.render.LayerSource
+import com.audiovisualizer.render.effects.ColorSpec
 import com.audiovisualizer.render.effects.Effect
+import com.audiovisualizer.render.effects.EffectParams
+import com.audiovisualizer.render.effects.ReactionMode
+import com.audiovisualizer.render.effects.ReactionTuning
 import com.audiovisualizer.render.effects.SpawnZone
 import com.audiovisualizer.render.gl.EglRenderSurface
 import com.audiovisualizer.render.gl.FogDriftAnimator
@@ -60,18 +62,27 @@ class AmbientDebugOverlayExportTest {
             name = "Particles",
             blendMode = BlendMode.ADD,
             source = LayerSource.Particles(
-                Effect.Particles(count = 150, size = 10f, speed = 1.2f, color = 0xFFFFFFFF.toInt())
+                Effect.Particles(count = 150, size = 10f, speed = 1.2f)
             ),
-            audioBinding = AudioBinding(band = AudioBand.BASS, target = AudioTarget.PARTICLE_SPAWN_RATE)
+            effectParams = EffectParams(
+                color = ColorSpec.solid(0xFFFFFFFF.toInt()),
+                reactionMode = ReactionMode.SMOOTH_CLIMAX,
+                reactionTuning = ReactionTuning(band = AudioBand.BASS)
+            )
         )
         val fogLayer = Layer(
             id = "fog",
             name = "Fog",
             blendMode = BlendMode.NORMAL,
             source = LayerSource.Fog(
-                Effect.Fog(density = 0.6f, zone = SpawnZone.FullScreen, color = Color.argb(200, 130, 90, 220))
+                Effect.Fog(density = 0.6f)
             ),
-            audioBinding = AudioBinding(band = AudioBand.BASS, target = AudioTarget.EFFECT_INTENSITY)
+            effectParams = EffectParams(
+                zone = SpawnZone.FullScreen,
+                color = ColorSpec.solid(Color.argb(200, 130, 90, 220)),
+                reactionMode = ReactionMode.SMOOTH_CLIMAX,
+                reactionTuning = ReactionTuning(band = AudioBand.BASS)
+            )
         )
         val imageLayer = Layer(id = "background", name = "Background", source = LayerSource.Image(imageUri))
         val layers = listOf(imageLayer, fogLayer, particleLayer)
@@ -153,8 +164,8 @@ class AmbientDebugOverlayExportTest {
 
             compositor.drawFrame(layers, null, dt)
 
-            val particlesResult = debugAnimator.update("particles", particleLayer.audioBinding, null, dt)
-            val fogResult = debugAnimator.update("fog", fogLayer.audioBinding, null, dt)
+            val particlesResult = debugAnimator.update("particles", particleLayer.effectParams, null, dt)
+            val fogResult = debugAnimator.update("fog", fogLayer.effectParams, null, dt)
             val fogDrift = debugFogDrift.update(dt, fogResult.elapsedSeconds, null)
             overlay.draw(
                 line1 = "PARTICLES  t=%6.2fs  intensity=%.3f".format(particlesResult.elapsedSeconds, particlesResult.intensity),

@@ -15,12 +15,14 @@ import com.audiovisualizer.audio.AudioAnalysisResult
 import com.audiovisualizer.audio.AudioFrame
 import com.audiovisualizer.audio.AudioPlaybackSync
 import com.audiovisualizer.render.AudioBand
-import com.audiovisualizer.render.AudioBinding
-import com.audiovisualizer.render.AudioTarget
 import com.audiovisualizer.render.BlendMode
 import com.audiovisualizer.render.Layer
 import com.audiovisualizer.render.LayerSource
+import com.audiovisualizer.render.effects.ColorSpec
 import com.audiovisualizer.render.effects.Effect
+import com.audiovisualizer.render.effects.EffectParams
+import com.audiovisualizer.render.effects.ReactionMode
+import com.audiovisualizer.render.effects.ReactionTuning
 import com.audiovisualizer.ui.MainActivity
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -84,13 +86,12 @@ class VisualizerRenderScreenshotTest {
                     name = "Particles (bass)",
                     blendMode = BlendMode.ADD,
                     source = LayerSource.Particles(
-                        Effect.Particles(count = 300, size = 24f, color = 0xFFFFFFFF.toInt())
+                        Effect.Particles(count = 300, size = 24f)
                     ),
-                    audioBinding = AudioBinding(
-                        band = AudioBand.BASS,
-                        target = AudioTarget.PARTICLE_SPAWN_RATE,
-                        sensitivity = 2f,
-                        smoothing = 0f
+                    effectParams = EffectParams(
+                        color = ColorSpec.solid(0xFFFFFFFF.toInt()),
+                        reactionMode = ReactionMode.SMOOTH_CLIMAX,
+                        reactionTuning = ReactionTuning(band = AudioBand.BASS, sensitivity = 2f)
                     )
                 )
                 renderer.layers = listOf(imageLayer, particleLayer)

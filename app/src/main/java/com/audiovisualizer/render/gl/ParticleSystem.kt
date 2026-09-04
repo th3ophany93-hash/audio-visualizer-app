@@ -14,8 +14,10 @@ import kotlin.random.Random
 /**
  * CPU-side simulation for an [Effect.Particles] layer: spawns, ages and
  * moves points in normalized device coordinates each frame. [update]'s
- * [intensity] (0..1, typically a resolved [com.audiovisualizer.render.AudioBinding])
- * scales spawn rate and speed so the effect visibly reacts to the music.
+ * [intensity] (0..1, from [LayerAnimator]) scales spawn rate and speed so
+ * the effect visibly reacts to the music. [zone] (from the layer's
+ * [com.audiovisualizer.render.effects.EffectParams]) is where new particles
+ * spawn, same as fog/glow's zone confines where they render.
  */
 class ParticleSystem(private val maxParticles: Int) {
 
@@ -39,16 +41,18 @@ class ParticleSystem(private val maxParticles: Int) {
     var activeCount: Int = 0
         private set
 
-    fun update(deltaSeconds: Float, params: Effect.Particles, intensity: Float) {
+    fun update(deltaSeconds: Float, params: Effect.Particles, zone: SpawnZone, intensity: Float) {
         val clampedIntensity = intensity.coerceIn(0f, 1f)
-        var toSpawn = params.count * (BASELINE_SPAWN_FRACTION + clampedIntensity) * deltaSeconds
+        val lifetimeSeconds = params.lifetime.coerceAtLeast(0.05f)
+        var toSpawn = params.count * (BASELINE_SPAWN_FRACTION + clampedIntensity) * params.spawnRate * deltaSeconds
 
         for (particle in particles) {
             var isDead = particle.life <= 0f
             if (!isDead) {
+                particle.vy -= params.gravity * deltaSeconds
                 particle.x += particle.vx * deltaSeconds
                 particle.y += particle.vy * deltaSeconds
-                particle.life -= deltaSeconds / LIFETIME_SECONDS
+                particle.life -= deltaSeconds / lifetimeSeconds
                 if (particle.life < 0f) particle.life = 0f
                 // A particle whose life just ran out is eligible for
                 // respawn in this same pass. Without this, a particle can
@@ -56,22 +60,22 @@ class ParticleSystem(private val maxParticles: Int) {
                 // hits the "alive" branch above). Since every particle
                 // spawned during the pool's initial fill-up is born within
                 // the same short window, they'd all cross zero life
-                // together ~LIFETIME_SECONDS later; deferring their reuse
+                // together ~lifetimeSeconds later; deferring their reuse
                 // by exactly one frame reproduces that same synchronized
                 // gap every cycle, which reads as the whole layer visibly
-                // pulsing at a ~LIFETIME_SECONDS period - independent of
+                // pulsing at a ~lifetimeSeconds period - independent of
                 // whatever the (smoothly-varying) intensity is doing.
                 isDead = particle.life <= 0f
             }
             if (isDead && toSpawn >= 1f) {
-                spawn(particle, params, clampedIntensity)
+                spawn(particle, params, zone, clampedIntensity)
                 toSpawn -= 1f
             }
         }
     }
 
-    private fun spawn(particle: Particle, params: Effect.Particles, intensity: Float) {
-        val (spawnX, spawnY) = randomPointIn(params.spawnZone)
+    private fun spawn(particle: Particle, params: Effect.Particles, zone: SpawnZone, intensity: Float) {
+        val (spawnX, spawnY) = randomPointIn(zone)
         particle.x = spawnX
         particle.y = spawnY
         val angle = random.nextFloat() * (2 * PI).toFloat()
@@ -115,7 +119,6 @@ class ParticleSystem(private val maxParticles: Int) {
     }
 
     private companion object {
-        const val LIFETIME_SECONDS = 2.5f
         const val BASE_SPEED = 0.5f
         const val BASELINE_SPAWN_FRACTION = 0.2f
     }

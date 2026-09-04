@@ -15,7 +15,11 @@ import com.audiovisualizer.render.AudioTarget
 import com.audiovisualizer.render.BlendMode
 import com.audiovisualizer.render.Layer
 import com.audiovisualizer.render.LayerSource
+import com.audiovisualizer.render.effects.ColorSpec
 import com.audiovisualizer.render.effects.Effect
+import com.audiovisualizer.render.effects.EffectParams
+import com.audiovisualizer.render.effects.ReactionMode
+import com.audiovisualizer.render.effects.ReactionTuning
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -68,13 +72,12 @@ class VideoExportTest {
             name = "Particles (bass)",
             blendMode = BlendMode.ADD,
             source = LayerSource.Particles(
-                Effect.Particles(count = 200, size = 16f, speed = 1.5f, color = 0xFFFFFFFF.toInt())
+                Effect.Particles(count = 200, size = 16f, speed = 1.5f)
             ),
-            audioBinding = AudioBinding(
-                band = AudioBand.BASS,
-                target = AudioTarget.PARTICLE_SPAWN_RATE,
-                sensitivity = 2f,
-                smoothing = 0.2f
+            effectParams = EffectParams(
+                color = ColorSpec.solid(0xFFFFFFFF.toInt()),
+                reactionMode = ReactionMode.SMOOTH_CLIMAX,
+                reactionTuning = ReactionTuning(band = AudioBand.BASS, sensitivity = 2f)
             )
         )
 

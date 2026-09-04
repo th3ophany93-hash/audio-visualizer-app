@@ -3,6 +3,13 @@
     <string name="action_pick_audio">Выбрать аудио</string>
     <string name="action_pick_image">Выбрать картинку</string>
     <string name="action_export">Экспорт в MP4</string>
+    <string name="action_add_effect">Добавить эффект</string>
+    <string name="layer_collapsed_indicator">▸</string>
+    <string name="layer_expanded_indicator">▾</string>
+    <string name="effect_particles">Частицы</string>
+    <string name="effect_fog">Туман</string>
+    <string name="effect_glow">Свечение</string>
+    <string name="effect_chromatic_aberration">Хроматическая аберрация</string>
     <string name="layers_title">Слои</string>
     <string name="no_layers">Нет слоёв. Добавьте слой, чтобы начать.</string>
     <string name="add_layer">Добавить слой</string>

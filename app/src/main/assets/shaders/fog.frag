@@ -16,10 +16,20 @@ in vec2 vTexCoord;
 out vec4 fragColor;
 
 uniform float uDensity;    // Effect.Fog.density - manual overall opacity
-uniform float uScale;      // Effect.Fog.scale - manual spatial size of the cloud pattern
-uniform vec4 uColor;       // Effect.Fog.color, rgb + alpha strength
+uniform float uScale;      // Effect.Fog.noiseScale - manual spatial size of the cloud pattern
+// EffectParams.color, 1-3 gradient stops - plain named uniforms (no arrays,
+// no loops) rather than uColorStops[3]/uStopPositions[3] indexed in a loop,
+// which reproducibly crashed the SwiftShader software renderer.
+uniform vec4 uColor0;
+uniform vec4 uColor1;
+uniform vec4 uColor2;
+uniform float uStopPos0;
+uniform float uStopPos1;
+uniform float uStopPos2;
+uniform int uStopCount;
 uniform vec2 uOffset;      // this layer's fbm noise-space drift offset, from FogDriftAnimator
 uniform float uIntensity;  // 0..1 ambient-wander + rare-climax value from LayerAnimator
+uniform float uOpacity;    // EffectParams.opacity - manual overall opacity multiplier
 
 uniform int uZoneType;     // 0 = full screen, 1 = rect, 2 = circle
 uniform vec4 uZoneRect;    // x, y, width, height - normalized, y=0 at the bottom
@@ -27,6 +37,16 @@ uniform vec3 uZoneCircle;  // centerX, centerY, radius - normalized, y=0 at the 
 
 float hash(vec2 p) {
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+}
+
+vec4 sampleGradient(float t) {
+    if (uStopCount <= 1) return uColor0;
+    if (uStopCount == 2 || t <= uStopPos1) {
+        float localT = clamp((t - uStopPos0) / max(uStopPos1 - uStopPos0, 0.0001), 0.0, 1.0);
+        return mix(uColor0, uColor1, localT);
+    }
+    float localT = clamp((t - uStopPos1) / max(uStopPos2 - uStopPos1, 0.0001), 0.0, 1.0);
+    return mix(uColor1, uColor2, localT);
 }
 
 float noise(vec2 p) {
@@ -72,5 +92,6 @@ void main() {
     float fogAmount = smoothstep(0.35, 0.85, n) * uDensity * (0.4 + 0.6 * uIntensity);
     fogAmount *= zoneMask(zoneUv);
 
-    fragColor = vec4(uColor.rgb, fogAmount * uColor.a);
+    vec4 color = sampleGradient(n);
+    fragColor = vec4(color.rgb, fogAmount * color.a * uOpacity);
 }

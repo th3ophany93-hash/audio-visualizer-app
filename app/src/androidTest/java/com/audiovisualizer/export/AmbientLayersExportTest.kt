@@ -10,12 +10,14 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.audiovisualizer.audio.AudioAnalyzer
 import com.audiovisualizer.render.AudioBand
-import com.audiovisualizer.render.AudioBinding
-import com.audiovisualizer.render.AudioTarget
 import com.audiovisualizer.render.BlendMode
 import com.audiovisualizer.render.Layer
 import com.audiovisualizer.render.LayerSource
+import com.audiovisualizer.render.effects.ColorSpec
 import com.audiovisualizer.render.effects.Effect
+import com.audiovisualizer.render.effects.EffectParams
+import com.audiovisualizer.render.effects.ReactionMode
+import com.audiovisualizer.render.effects.ReactionTuning
 import com.audiovisualizer.render.effects.SpawnZone
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -62,12 +64,12 @@ class AmbientLayersExportTest {
             name = "Particles",
             blendMode = BlendMode.ADD,
             source = LayerSource.Particles(
-                Effect.Particles(count = 150, size = 14f, speed = 1.2f, color = 0xFFFFFFFF.toInt())
+                Effect.Particles(count = 150, size = 14f, speed = 1.2f)
             ),
-            audioBinding = AudioBinding(
-                band = AudioBand.BASS,
-                target = AudioTarget.PARTICLE_SPAWN_RATE,
-                sensitivity = 1.5f
+            effectParams = EffectParams(
+                color = ColorSpec.solid(0xFFFFFFFF.toInt()),
+                reactionMode = ReactionMode.SMOOTH_CLIMAX,
+                reactionTuning = ReactionTuning(band = AudioBand.BASS, sensitivity = 1.5f)
             )
         )
         val fogLayer = Layer(
@@ -75,19 +77,13 @@ class AmbientLayersExportTest {
             name = "Fog",
             blendMode = BlendMode.NORMAL,
             source = LayerSource.Fog(
-                Effect.Fog(
-                    density = 0.55f,
-                    scale = 1.3f,
-                    zone = SpawnZone.Rect(x = 0f, y = 0f, width = 1f, height = 0.55f),
-                    color = Color.argb(180, 120, 70, 200)
-                )
+                Effect.Fog(density = 0.55f, noiseScale = 1.3f)
             ),
-            audioBinding = AudioBinding(
-                band = AudioBand.BASS,
-                target = AudioTarget.EFFECT_INTENSITY,
-                sensitivity = 1.5f,
-                minValue = 0.25f,
-                maxValue = 1f
+            effectParams = EffectParams(
+                zone = SpawnZone.Rect(x = 0f, y = 0f, width = 1f, height = 0.55f),
+                color = ColorSpec.solid(Color.argb(180, 120, 70, 200)),
+                reactionMode = ReactionMode.SMOOTH_CLIMAX,
+                reactionTuning = ReactionTuning(band = AudioBand.BASS, sensitivity = 1.5f, minIntensity = 0.25f, maxIntensity = 1f)
             )
         )
         val glowLayer = Layer(
@@ -95,15 +91,17 @@ class AmbientLayersExportTest {
             name = "Glow",
             blendMode = BlendMode.ADD,
             source = LayerSource.Glow(
-                Effect.Glow(
-                    intensity = 1.1f,
-                    radius = 22f,
-                    scale = 1.4f,
-                    zone = SpawnZone.Circle(centerX = 0.5f, centerY = 0.62f, radius = 0.38f),
-                    color = Color.argb(255, 255, 170, 90)
-                )
+                // Old scale=1.4 enlarged the glow's radius directly (there was
+                // no separate quad-geometry scale then) - folded into radius
+                // here (22 * 1.4) to keep the same visual size.
+                Effect.Glow(intensity = 1.1f, radius = 30.8f)
+            ),
+            effectParams = EffectParams(
+                zone = SpawnZone.Circle(centerX = 0.5f, centerY = 0.62f, radius = 0.38f),
+                color = ColorSpec.solid(Color.argb(255, 255, 170, 90))
+                // reactionMode defaults to AMBIENT_ONLY: purely manual placement/color/radius,
+                // driven only by its own ambient drift - same as "no audioBinding at all" before.
             )
-            // No audioBinding at all: purely manual placement/color/scale, driven only by its own ambient drift.
         )
 
         val outputFile = File(appContext.getExternalFilesDir(null), "ambient_layers_demo.mp4")

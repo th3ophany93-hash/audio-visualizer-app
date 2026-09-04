@@ -2,9 +2,8 @@
 precision mediump float;
 
 in float vLife;
+in vec4 vColor;
 out vec4 fragColor;
-
-uniform vec4 uColor; // from Effect.Particles.color
 
 void main() {
     // Round point sprite: discard corners of the point quad, soft-fade the edge.
@@ -14,5 +13,5 @@ void main() {
         discard;
     }
     float edgeFade = 1.0 - smoothstep(0.35, 0.5, dist);
-    fragColor = vec4(uColor.rgb, uColor.a * vLife * edgeFade);
+    fragColor = vec4(vColor.rgb, vColor.a * vLife * edgeFade);
 }

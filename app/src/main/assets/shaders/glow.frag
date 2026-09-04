@@ -13,10 +13,22 @@ out vec4 fragColor;
 
 uniform float uBrightness; // Effect.Glow.intensity - manual base brightness
 uniform float uRadius;     // Effect.Glow.radius - manual blob softness/size
-uniform float uScale;      // Effect.Glow.scale - manual overall size multiplier
-uniform vec4 uColor;       // Effect.Glow.color
+uniform float uScale;      // EffectParams scale - manual overall size multiplier
+// EffectParams.color, 1-3 gradient stops - plain named uniforms (no arrays,
+// no loops) rather than uColorStops[3]/uStopPositions[3] indexed in a loop,
+// which reproducibly crashed the SwiftShader software renderer.
+uniform vec4 uColor0;
+uniform vec4 uColor1;
+uniform vec4 uColor2;
+uniform float uStopPos0;
+uniform float uStopPos1;
+uniform float uStopPos2;
+uniform int uStopCount;
 uniform float uTime;       // seconds, this layer's own clock - drives drift only
 uniform float uIntensity;  // 0..1 ambient-wander + rare-climax value from LayerAnimator
+uniform float uDriftSpeed;      // EffectParams.movement.speed, 0 if movement disabled - default 1 = old fixed rate
+uniform float uDriftAngleOffset; // EffectParams.movement.direction, radians - default 0 = old heading
+uniform float uOpacity;    // EffectParams.opacity - manual overall opacity multiplier
 
 uniform int uZoneType;     // 0 = full screen, 1 = rect, 2 = circle
 uniform vec4 uZoneRect;    // x, y, width, height - normalized, y=0 at the bottom
@@ -24,6 +36,16 @@ uniform vec3 uZoneCircle;  // centerX, centerY, radius - normalized, y=0 at the 
 
 float hash(vec2 p) {
     return fract(sin(dot(p, vec2(41.3, 289.1))) * 43758.5453123);
+}
+
+vec4 sampleGradient(float t) {
+    if (uStopCount <= 1) return uColor0;
+    if (uStopCount == 2 || t <= uStopPos1) {
+        float localT = clamp((t - uStopPos0) / max(uStopPos1 - uStopPos0, 0.0001), 0.0, 1.0);
+        return mix(uColor0, uColor1, localT);
+    }
+    float localT = clamp((t - uStopPos1) / max(uStopPos2 - uStopPos1, 0.0001), 0.0, 1.0);
+    return mix(uColor1, uColor2, localT);
 }
 
 vec2 zoneCenter() {
@@ -45,7 +67,7 @@ void main() {
     float extent = zoneExtent();
     // The blob's own center wanders slowly and irregularly within its
     // zone - a long, non-repeating drift, never a snap to the beat.
-    float driftAngle = uTime * 0.05 + hash(center) * 6.28318;
+    float driftAngle = uTime * 0.05 * uDriftSpeed + hash(center) * 6.28318 + uDriftAngleOffset;
     vec2 drift = vec2(cos(driftAngle), sin(driftAngle)) * extent * 0.2;
 
     float dist = distance(zoneUv, center + drift);
@@ -53,5 +75,6 @@ void main() {
     float glow = exp(-(dist * dist) / (2.0 * radius * radius));
 
     float brightness = uBrightness * (0.35 + 0.65 * uIntensity);
-    fragColor = vec4(uColor.rgb, glow * uColor.a * brightness);
+    vec4 color = sampleGradient(uIntensity);
+    fragColor = vec4(color.rgb, glow * color.a * brightness * uOpacity);
 }

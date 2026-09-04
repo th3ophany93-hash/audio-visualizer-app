@@ -10,12 +10,14 @@ import android.opengl.GLES30
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.audiovisualizer.render.AudioBand
-import com.audiovisualizer.render.AudioBinding
-import com.audiovisualizer.render.AudioTarget
 import com.audiovisualizer.render.BlendMode
 import com.audiovisualizer.render.Layer
 import com.audiovisualizer.render.LayerSource
+import com.audiovisualizer.render.effects.ColorSpec
 import com.audiovisualizer.render.effects.Effect
+import com.audiovisualizer.render.effects.EffectParams
+import com.audiovisualizer.render.effects.ReactionMode
+import com.audiovisualizer.render.effects.ReactionTuning
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -76,8 +78,12 @@ class LayerCompositorExportRenderTest {
             id = "particles",
             name = "Particles",
             blendMode = BlendMode.ADD,
-            source = LayerSource.Particles(Effect.Particles(count = 200, size = 16f, speed = 1.5f, color = 0xFFFFFFFF.toInt())),
-            audioBinding = AudioBinding(band = AudioBand.BASS, target = AudioTarget.PARTICLE_SPAWN_RATE, sensitivity = 2f, smoothing = 0.2f)
+            source = LayerSource.Particles(Effect.Particles(count = 200, size = 16f, speed = 1.5f)),
+            effectParams = EffectParams(
+                color = ColorSpec.solid(0xFFFFFFFF.toInt()),
+                reactionMode = ReactionMode.SMOOTH_CLIMAX,
+                reactionTuning = ReactionTuning(band = AudioBand.BASS, sensitivity = 2f)
+            )
         )
         compositor.drawFrame(listOf(imageLayer, particleLayer), null, deltaSeconds = 0.05f)
 

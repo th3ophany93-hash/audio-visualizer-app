@@ -4,6 +4,7 @@ import android.content.Intent
 import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Bundle
+import android.widget.PopupMenu
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -17,13 +18,13 @@ import com.audiovisualizer.audio.AudioPlaybackDriver
 import com.audiovisualizer.audio.AudioPlaybackSync
 import com.audiovisualizer.export.MediaCodecVideoExporter
 import com.audiovisualizer.export.VideoExporter
-import com.audiovisualizer.render.AudioBand
-import com.audiovisualizer.render.AudioBinding
-import com.audiovisualizer.render.AudioTarget
 import com.audiovisualizer.render.BlendMode
 import com.audiovisualizer.render.Layer
 import com.audiovisualizer.render.LayerSource
 import com.audiovisualizer.render.effects.Effect
+import com.audiovisualizer.render.effects.EffectParams
+import com.audiovisualizer.render.effects.ReactionMode
+import com.audiovisualizer.render.effects.ReactionTuning
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -87,6 +88,61 @@ class MainActivity : AppCompatActivity() {
         binding.exportButton.setOnClickListener {
             exportVideo()
         }
+        binding.addEffectButton.setOnClickListener { showAddEffectMenu(it) }
+    }
+
+    /** Lets the user add a fresh particles/fog/glow/chromatic-aberration layer to try out its [EffectParams] panel. */
+    private fun showAddEffectMenu(anchor: android.view.View) {
+        val popup = PopupMenu(this, anchor)
+        val items = listOf(
+            getString(R.string.effect_particles) to { addEffectLayer(EffectType.PARTICLES) },
+            getString(R.string.effect_fog) to { addEffectLayer(EffectType.FOG) },
+            getString(R.string.effect_glow) to { addEffectLayer(EffectType.GLOW) },
+            getString(R.string.effect_chromatic_aberration) to { addEffectLayer(EffectType.CHROMATIC_ABERRATION) }
+        )
+        items.forEachIndexed { index, (title, _) -> popup.menu.add(0, index, index, title) }
+        popup.setOnMenuItemClickListener { item ->
+            items[item.itemId].second.invoke()
+            true
+        }
+        popup.show()
+    }
+
+    private enum class EffectType { PARTICLES, FOG, GLOW, CHROMATIC_ABERRATION }
+
+    /**
+     * Every new layer defaults to [EffectParams]() (AMBIENT_ONLY, no beat
+     * flicker) so it starts out with exactly the same ambient-wander-only
+     * look every effect layer in this app has always had by default -
+     * SMOOTH_CLIMAX/BEAT_PULSE/beatFlicker are opt-in from the panel.
+     */
+    private fun addEffectLayer(type: EffectType) {
+        val id = UUID.randomUUID().toString()
+        val layer = when (type) {
+            EffectType.PARTICLES -> Layer(
+                id = id,
+                name = getString(R.string.effect_particles),
+                blendMode = BlendMode.ADD,
+                source = LayerSource.Particles(Effect.Particles())
+            )
+            EffectType.FOG -> Layer(
+                id = id,
+                name = getString(R.string.effect_fog),
+                source = LayerSource.Fog(Effect.Fog())
+            )
+            EffectType.GLOW -> Layer(
+                id = id,
+                name = getString(R.string.effect_glow),
+                blendMode = BlendMode.ADD,
+                source = LayerSource.Glow(Effect.Glow())
+            )
+            EffectType.CHROMATIC_ABERRATION -> Layer(
+                id = id,
+                name = getString(R.string.effect_chromatic_aberration),
+                source = LayerSource.ChromaticAberration(Effect.ChromaticAberration())
+            )
+        }
+        addLayer(layer)
     }
 
     private fun addLayer(layer: Layer) {
@@ -122,11 +178,9 @@ class MainActivity : AppCompatActivity() {
                 source = LayerSource.Particles(
                     Effect.Particles(count = 150, size = 10f, speed = 1.5f)
                 ),
-                audioBinding = AudioBinding(
-                    band = AudioBand.BASS,
-                    target = AudioTarget.PARTICLE_SPAWN_RATE,
-                    sensitivity = 1.5f,
-                    smoothing = 0.3f
+                effectParams = EffectParams(
+                    reactionMode = ReactionMode.SMOOTH_CLIMAX,
+                    reactionTuning = ReactionTuning(sensitivity = 1.5f)
                 )
             )
         )

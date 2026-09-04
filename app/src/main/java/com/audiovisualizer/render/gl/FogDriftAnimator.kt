@@ -1,6 +1,7 @@
 package com.audiovisualizer.render.gl
 
 import com.audiovisualizer.audio.AudioFrame
+import com.audiovisualizer.render.effects.MovementParams
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -35,7 +36,20 @@ class FogDriftAnimator(seed: Long) {
     private var offsetX = 0f
     private var offsetY = 0f
 
-    fun update(deltaSeconds: Float, elapsedSeconds: Float, frame: AudioFrame?): Result {
+    /**
+     * [movement] gates and scales the ambient-cycle-driven component only.
+     * [manualDriftX]/[manualDriftY] (from `Effect.Fog.driftSpeedX/Y`) are a
+     * constant manual "wind" applied on top regardless of [movement.enabled] -
+     * they're a deliberate override, not part of the ambient engine.
+     */
+    fun update(
+        deltaSeconds: Float,
+        elapsedSeconds: Float,
+        frame: AudioFrame?,
+        movement: MovementParams = MovementParams(),
+        manualDriftX: Float = 0f,
+        manualDriftY: Float = 0f
+    ): Result {
         if (deltaSeconds <= 0f) return Result(offsetX, offsetY)
 
         val bandAlpha = (deltaSeconds / BAND_SMOOTHING_SECONDS).coerceIn(0f, 1f)
@@ -43,35 +57,45 @@ class FogDriftAnimator(seed: Long) {
         smoothedMid += ((frame?.mid ?: 0f) - smoothedMid) * bandAlpha
         smoothedTreble += ((frame?.treble ?: 0f) - smoothedTreble) * bandAlpha
 
-        // Own ambient motion first: a slowly wandering heading and speed,
-        // never touching audio.
-        val angle = directionCycle.value(elapsedSeconds) * TAU
-        val speedMultiplier = 0.5f + speedCycle.value(elapsedSeconds) // 0.5..1.5
-        var vx = cos(angle) * BASE_DRIFT_SPEED * speedMultiplier
-        var vy = sin(angle) * BASE_DRIFT_SPEED * speedMultiplier
+        var vx = 0f
+        var vy = 0f
+        if (movement.enabled) {
+            // Own ambient motion first: a slowly wandering heading and speed,
+            // never touching audio. movement.direction is a manual heading
+            // bias added on top; movement.speed is a manual multiplier -
+            // both default to a no-op so this reproduces the old
+            // fixed-constant drift exactly.
+            val angle = directionCycle.value(elapsedSeconds) * TAU + movement.direction
+            val speedMultiplier = (0.5f + speedCycle.value(elapsedSeconds)) * movement.speed // 0.5..1.5, scaled
+            vx = cos(angle) * BASE_DRIFT_SPEED * speedMultiplier
+            vy = sin(angle) * BASE_DRIFT_SPEED * speedMultiplier
 
-        // Mid: a gentle overall speed lift.
-        val midBoost = 1f + smoothedMid * MID_SPEED_BOOST
-        vx *= midBoost
-        vy *= midBoost
+            // Mid: a gentle overall speed lift.
+            val midBoost = 1f + smoothedMid * MID_SPEED_BOOST
+            vx *= midBoost
+            vy *= midBoost
 
-        // Treble: a slow, *persistent* curl. headingBias keeps accumulating
-        // while treble stays elevated, so the path actually spirals more
-        // and more the longer treble is sustained - not just a one-frame
-        // wobble that resets every frame. Still driven only by the
-        // smoothed level, so a single beat barely moves it.
-        headingBias += smoothedTreble * TREBLE_CURL_STRENGTH * deltaSeconds
-        val cosC = cos(headingBias)
-        val sinC = sin(headingBias)
-        val curledVx = vx * cosC - vy * sinC
-        val curledVy = vx * sinC + vy * cosC
-        vx = curledVx
-        vy = curledVy
+            // Treble: a slow, *persistent* curl. headingBias keeps accumulating
+            // while treble stays elevated, so the path actually spirals more
+            // and more the longer treble is sustained - not just a one-frame
+            // wobble that resets every frame. Still driven only by the
+            // smoothed level, so a single beat barely moves it.
+            headingBias += smoothedTreble * TREBLE_CURL_STRENGTH * deltaSeconds
+            val cosC = cos(headingBias)
+            val sinC = sin(headingBias)
+            val curledVx = vx * cosC - vy * sinC
+            val curledVy = vx * sinC + vy * cosC
+            vx = curledVx
+            vy = curledVy
 
-        // Bass: pulls the drift downward and speeds it up - an
-        // "expanding, sinking" feel, layered on top rather than replacing
-        // the ambient heading.
-        vy -= smoothedBass * BASS_PULL_STRENGTH
+            // Bass: pulls the drift downward and speeds it up - an
+            // "expanding, sinking" feel, layered on top rather than replacing
+            // the ambient heading.
+            vy -= smoothedBass * BASS_PULL_STRENGTH
+        }
+
+        vx += manualDriftX
+        vy += manualDriftY
 
         offsetX += vx * deltaSeconds
         offsetY += vy * deltaSeconds

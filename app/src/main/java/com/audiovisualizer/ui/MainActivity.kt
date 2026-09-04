@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.widget.LinearLayout
 import android.widget.PopupMenu
 import android.widget.ProgressBar
+import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -31,6 +32,9 @@ import com.audiovisualizer.render.effects.EffectParams
 import com.audiovisualizer.render.effects.ReactionMode
 import com.audiovisualizer.render.effects.ReactionTuning
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -54,6 +58,9 @@ class MainActivity : AppCompatActivity() {
     private var mediaPlayer: MediaPlayer? = null
     private var playbackDriver: AudioPlaybackDriver? = null
     private var exporter: MediaCodecVideoExporter? = null
+
+    private var timelineTickerJob: Job? = null
+    private var isUserScrubbingTimeline = false
 
     private val pickAudioLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri == null) return@registerForActivityResult
@@ -88,6 +95,10 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        // android:enabled="false" in the layout isn't honored at inflate time on all
+        // platform/AppCompat combinations this app targets, so disable explicitly here.
+        binding.timelineSeekBar.isEnabled = false
+        binding.timelinePlayPauseButton.isEnabled = false
 
         layerAdapter = LayerListAdapter(layers) { layer, isEnabled ->
             layer.enabled = isEnabled
@@ -105,6 +116,25 @@ class MainActivity : AppCompatActivity() {
             exportVideo()
         }
         binding.addEffectButton.setOnClickListener { showAddEffectMenu(it) }
+
+        binding.timelinePlayPauseButton.setOnClickListener { toggleTimelinePlayback() }
+        binding.timelineSeekBar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                val player = mediaPlayer ?: return
+                player.seekTo(progress)
+                // Keep the live preview WYSIWYG while scrubbing, same as during normal playback.
+                binding.visualizerSurface.renderer.audioSync?.seekTo(progress.toLong())
+            }
+
+            override fun onStartTrackingTouch(seekBar: SeekBar) {
+                isUserScrubbingTimeline = true
+            }
+
+            override fun onStopTrackingTouch(seekBar: SeekBar) {
+                isUserScrubbingTimeline = false
+            }
+        })
     }
 
     /** Lets the user add a fresh particles/fog/glow/chromatic-aberration layer to try out its [EffectParams] panel. */
@@ -274,6 +304,40 @@ class MainActivity : AppCompatActivity() {
         playbackDriver = driver
 
         binding.visualizerSurface.renderer.audioSync = sync
+
+        setupTimelineControls(player)
+    }
+
+    /**
+     * UX spec section 3: a compact play/stop + scrub slider under the
+     * preview, purely for editing convenience - it only seeks the live
+     * preview's [MediaPlayer]/[AudioPlaybackSync], never touches
+     * [analysisResult] or [selectedAudioUri], so it can't affect export.
+     */
+    private fun setupTimelineControls(player: MediaPlayer) {
+        binding.timelineSeekBar.max = player.duration.coerceAtLeast(1)
+        binding.timelineSeekBar.progress = player.currentPosition
+        binding.timelineSeekBar.isEnabled = true
+        binding.timelinePlayPauseButton.isEnabled = true
+        binding.timelinePlayPauseButton.setImageResource(android.R.drawable.ic_media_pause)
+
+        timelineTickerJob?.cancel()
+        timelineTickerJob = lifecycleScope.launch {
+            while (isActive) {
+                if (!isUserScrubbingTimeline) {
+                    binding.timelineSeekBar.progress = player.currentPosition
+                }
+                binding.timelinePlayPauseButton.setImageResource(
+                    if (player.isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
+                )
+                delay(TIMELINE_TICK_MS)
+            }
+        }
+    }
+
+    private fun toggleTimelinePlayback() {
+        val player = mediaPlayer ?: return
+        if (player.isPlaying) player.pause() else player.start()
     }
 
     /** Renders the current layer stack + analyzed audio to an MP4 in the app's external files dir. */
@@ -324,6 +388,13 @@ class MainActivity : AppCompatActivity() {
         playbackDriver = null
         mediaPlayer?.release()
         mediaPlayer = null
+
+        timelineTickerJob?.cancel()
+        timelineTickerJob = null
+        binding.timelineSeekBar.progress = 0
+        binding.timelineSeekBar.isEnabled = false
+        binding.timelinePlayPauseButton.isEnabled = false
+        binding.timelinePlayPauseButton.setImageResource(android.R.drawable.ic_media_play)
     }
 
     override fun onResume() {
@@ -341,5 +412,9 @@ class MainActivity : AppCompatActivity() {
         exporter?.cancel()
         dismissAnalysisProgressDialog()
         super.onDestroy()
+    }
+
+    private companion object {
+        const val TIMELINE_TICK_MS = 200L
     }
 }

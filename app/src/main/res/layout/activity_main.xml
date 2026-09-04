@@ -12,7 +12,40 @@
         app:layout_constraintTop_toTopOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintBottom_toTopOf="@id/controlsPanel" />
+        app:layout_constraintBottom_toTopOf="@id/timelineRow" />
+
+    <!-- UX spec section 3: a compact, navigational-only scrubber - never part of the export. -->
+    <LinearLayout
+        android:id="@+id/timelineRow"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="4dp"
+        android:paddingTop="2dp"
+        android:paddingBottom="2dp"
+        android:paddingEnd="8dp"
+        android:background="@color/surface"
+        app:layout_constraintTop_toBottomOf="@id/visualizerSurface"
+        app:layout_constraintBottom_toTopOf="@id/controlsPanel">
+
+        <ImageButton
+            android:id="@+id/timelinePlayPauseButton"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/timeline_play_pause"
+            android:src="@android:drawable/ic_media_play"
+            android:enabled="false" />
+
+        <SeekBar
+            android:id="@+id/timelineSeekBar"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:enabled="false" />
+
+    </LinearLayout>
 
     <LinearLayout
         android:id="@+id/controlsPanel"
@@ -21,7 +54,7 @@
         android:orientation="horizontal"
         android:padding="8dp"
         android:background="@color/surface"
-        app:layout_constraintTop_toBottomOf="@id/visualizerSurface"
+        app:layout_constraintTop_toBottomOf="@id/timelineRow"
         app:layout_constraintBottom_toTopOf="@id/layersTitle">
 
         <com.google.android.material.button.MaterialButton

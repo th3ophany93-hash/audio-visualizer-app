@@ -15,7 +15,9 @@ import kotlin.math.abs
  * range (highlighted), and an optional [playheadFraction] shows live
  * playback position. Dragging a handle reports through [onStartHandleDragged]/
  * [onEndHandleDragged] so the host can seek+play from that point - the
- * standard trimmer interaction.
+ * standard trimmer interaction. The playhead itself is also draggable
+ * (clamped to [startFraction, endFraction]), reported through
+ * [onPlayheadDragged], for scrubbing within the current selection.
  */
 class WaveformView @JvmOverloads constructor(
     context: Context,
@@ -49,6 +51,7 @@ class WaveformView @JvmOverloads constructor(
 
     var onStartHandleDragged: ((Float) -> Unit)? = null
     var onEndHandleDragged: ((Float) -> Unit)? = null
+    var onPlayheadDragged: ((Float) -> Unit)? = null
 
     private val unselectedWavePaint = Paint().apply { color = Color.rgb(90, 90, 100); strokeWidth = 3f }
     private val selectedWavePaint = Paint().apply { color = Color.WHITE; strokeWidth = 3f }
@@ -56,7 +59,7 @@ class WaveformView @JvmOverloads constructor(
     private val handlePaint = Paint().apply { color = Color.CYAN; strokeWidth = 8f }
     private val playheadPaint = Paint().apply { color = Color.RED; strokeWidth = 3f }
 
-    private enum class Handle { START, END }
+    private enum class Handle { START, END, PLAYHEAD }
     private var draggingHandle: Handle? = null
 
     override fun onDraw(canvas: Canvas) {
@@ -98,7 +101,12 @@ class WaveformView @JvmOverloads constructor(
 
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                draggingHandle = if (abs(touchFraction - startFraction) <= abs(touchFraction - endFraction)) {
+                val distanceToStart = abs(touchFraction - startFraction)
+                val distanceToEnd = abs(touchFraction - endFraction)
+                val distanceToPlayhead = playheadFraction?.let { abs(touchFraction - it) }
+                draggingHandle = if (distanceToPlayhead != null && distanceToPlayhead <= distanceToStart && distanceToPlayhead <= distanceToEnd) {
+                    Handle.PLAYHEAD
+                } else if (distanceToStart <= distanceToEnd) {
                     Handle.START
                 } else {
                     Handle.END
@@ -113,6 +121,11 @@ class WaveformView @JvmOverloads constructor(
                     Handle.END -> {
                         endFraction = touchFraction.coerceAtLeast(startFraction)
                         onEndHandleDragged?.invoke(endFraction)
+                    }
+                    Handle.PLAYHEAD -> {
+                        val clamped = touchFraction.coerceIn(startFraction, endFraction)
+                        playheadFraction = clamped
+                        onPlayheadDragged?.invoke(clamped)
                     }
                     null -> Unit
                 }

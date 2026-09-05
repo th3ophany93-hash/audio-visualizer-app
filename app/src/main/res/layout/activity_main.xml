@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/background">
@@ -27,7 +28,7 @@
         android:paddingEnd="8dp"
         android:background="@color/surface"
         app:layout_constraintTop_toBottomOf="@id/visualizerSurface"
-        app:layout_constraintBottom_toTopOf="@id/controlsPanel">
+        app:layout_constraintBottom_toTopOf="@id/analysisProgressRow">
 
         <ImageButton
             android:id="@+id/timelinePlayPauseButton"
@@ -47,6 +48,41 @@
 
     </LinearLayout>
 
+    <!-- A dedicated, non-overlapping row for audio-analysis progress: it pushes the
+         controls panel down while visible instead of covering the import buttons
+         with a modal dialog. Gone by default, shown only during loadAudio(). -->
+    <LinearLayout
+        android:id="@+id/analysisProgressRow"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingStart="12dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="6dp"
+        android:paddingEnd="12dp"
+        android:background="@color/surface"
+        android:visibility="gone"
+        app:layout_constraintTop_toBottomOf="@id/timelineRow"
+        app:layout_constraintBottom_toTopOf="@id/controlsPanel">
+
+        <TextView
+            android:id="@+id/analysisProgressText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="@color/on_background"
+            android:textSize="12sp"
+            tools:text="Анализ частот…" />
+
+        <ProgressBar
+            android:id="@+id/analysisProgressBar"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:max="100"
+            android:progress="0" />
+
+    </LinearLayout>
+
     <LinearLayout
         android:id="@+id/controlsPanel"
         android:layout_width="match_parent"
@@ -54,7 +90,7 @@
         android:orientation="horizontal"
         android:padding="8dp"
         android:background="@color/surface"
-        app:layout_constraintTop_toBottomOf="@id/timelineRow"
+        app:layout_constraintTop_toBottomOf="@id/analysisProgressRow"
         app:layout_constraintBottom_toTopOf="@id/layersTitle">
 
         <com.google.android.material.button.MaterialButton

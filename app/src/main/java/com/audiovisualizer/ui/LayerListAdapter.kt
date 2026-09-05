@@ -4,15 +4,25 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.CheckBox
+import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import com.audiovisualizer.app.R
 import com.audiovisualizer.render.Layer
 
+/**
+ * Draw order is significant, not just cosmetic: e.g. a
+ * [com.audiovisualizer.render.LayerSource.ChromaticAberration] layer only
+ * distorts whatever is already drawn below it in the stack, so a layer
+ * added before any content layer has nothing to distort and stays
+ * invisible no matter its own settings - hence [onMoveUp]/[onMoveDown].
+ */
 class LayerListAdapter(
     private val layers: List<Layer>,
-    private val onToggle: (Layer, Boolean) -> Unit
+    private val onToggle: (Layer, Boolean) -> Unit,
+    private val onMoveUp: (Layer) -> Unit,
+    private val onMoveDown: (Layer) -> Unit
 ) : RecyclerView.Adapter<LayerListAdapter.ViewHolder>() {
 
     private val expandedLayerIds = mutableSetOf<String>()
@@ -20,6 +30,8 @@ class LayerListAdapter(
     class ViewHolder(view: View) : RecyclerView.ViewHolder(view) {
         val nameText: TextView = view.findViewById(R.id.layerName)
         val enabledCheckbox: CheckBox = view.findViewById(R.id.layerEnabled)
+        val moveUpButton: ImageButton = view.findViewById(R.id.layerMoveUp)
+        val moveDownButton: ImageButton = view.findViewById(R.id.layerMoveDown)
         val expandToggle: TextView = view.findViewById(R.id.layerExpandToggle)
         val paramsPanel: LinearLayout = view.findViewById(R.id.layerParamsPanel)
     }
@@ -37,6 +49,14 @@ class LayerListAdapter(
         holder.enabledCheckbox.setOnCheckedChangeListener { _, isChecked ->
             onToggle(layer, isChecked)
         }
+
+        holder.moveUpButton.isEnabled = position > 0
+        holder.moveUpButton.alpha = if (position > 0) 1f else 0.3f
+        holder.moveUpButton.setOnClickListener { onMoveUp(layer) }
+
+        holder.moveDownButton.isEnabled = position < layers.size - 1
+        holder.moveDownButton.alpha = if (position < layers.size - 1) 1f else 0.3f
+        holder.moveDownButton.setOnClickListener { onMoveDown(layer) }
 
         val isExpanded = expandedLayerIds.contains(layer.id)
         applyExpandedState(holder, layer, isExpanded)

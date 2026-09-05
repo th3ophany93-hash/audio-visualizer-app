@@ -148,10 +148,11 @@ object LayerParamsPanel {
         onChanged: () -> Unit,
         rerender: () -> Unit
     ) {
-        baseSection(context, container, layer, onChanged, showColor = false)
+        baseSection(context, container, layer, onChanged, showColor = false, showBlendAndScale = false)
         reactionSection(context, container, layer, onChanged, rerender)
 
         sectionHeader(context, container, "Хроматическая аберрация")
+        container.addView(label(context, "Это пост-эффект: он смещает цвет уже нарисованного под ним, поэтому распространён режим смешивания/масштаб не действуют, а без слоя с содержимым ниже эффект не будет виден - переместите его ниже нужного слоя стрелками в списке слоёв."))
         var params = source.params
         sliderRow(context, container, "Сила эффекта", 0f, 0.2f, params.strength, 3) { v ->
             params = params.copy(strength = v)
@@ -186,7 +187,14 @@ object LayerParamsPanel {
 
     // ---- Universal sections -------------------------------------------------
 
-    private fun baseSection(context: Context, container: LinearLayout, layer: Layer, onChanged: () -> Unit, showColor: Boolean = true) {
+    private fun baseSection(
+        context: Context,
+        container: LinearLayout,
+        layer: Layer,
+        onChanged: () -> Unit,
+        showColor: Boolean = true,
+        showBlendAndScale: Boolean = true
+    ) {
         sectionHeader(context, container, "Основное")
         var params = layer.effectParams
         fun update(transform: (EffectParams) -> EffectParams) {
@@ -197,11 +205,13 @@ object LayerParamsPanel {
 
         switchRow(context, container, "Включено", params.enabled) { v -> update { it.copy(enabled = v) } }
         sliderRow(context, container, "Непрозрачность", 0f, 1f, params.opacity, 2) { v -> update { it.copy(opacity = v) } }
-        spinnerRow(context, container, "Режим смешивания", BlendMode.entries.map { it.name }, params.blendMode.ordinal) { i ->
-            update { it.copy(blendMode = BlendMode.entries[i]) }
+        if (showBlendAndScale) {
+            spinnerRow(context, container, "Режим смешивания", BlendMode.entries.map { it.name }, params.blendMode.ordinal) { i ->
+                update { it.copy(blendMode = BlendMode.entries[i]) }
+            }
+            sliderRow(context, container, "Масштаб X", 0.1f, 3f, params.scaleX, 2) { v -> update { it.copy(scaleX = v) } }
+            sliderRow(context, container, "Масштаб Y", 0.1f, 3f, params.scaleY, 2) { v -> update { it.copy(scaleY = v) } }
         }
-        sliderRow(context, container, "Масштаб X", 0.1f, 3f, params.scaleX, 2) { v -> update { it.copy(scaleX = v) } }
-        sliderRow(context, container, "Масштаб Y", 0.1f, 3f, params.scaleY, 2) { v -> update { it.copy(scaleY = v) } }
 
         zoneRow(context, container, params.zone) { z -> update { it.copy(zone = z) } }
         if (showColor) {

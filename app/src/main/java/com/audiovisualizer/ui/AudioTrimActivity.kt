@@ -64,6 +64,9 @@ class AudioTrimActivity : AppCompatActivity() {
             updateSelectionRangeText()
             seekAndPlayFrom(fraction)
         }
+        binding.waveformView.onPlayheadDragged = { fraction ->
+            seekAndPlayFrom(fraction)
+        }
 
         loadWaveform(audioUri)
     }
@@ -79,6 +82,7 @@ class AudioTrimActivity : AppCompatActivity() {
                 binding.waveformView.peaks = peaks
                 binding.waveformView.startFraction = 0f
                 binding.waveformView.endFraction = 1f
+                binding.waveformView.playheadFraction = 0f
                 updateSelectionRangeText()
 
                 val player = MediaPlayer()

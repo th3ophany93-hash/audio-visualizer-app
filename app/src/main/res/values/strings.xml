@@ -36,4 +36,7 @@
     <string name="trim_failed">Не удалось обрезать: %1$s</string>
 
     <string name="timeline_play_pause">Играть/Пауза</string>
+
+    <string name="layer_move_up">Переместить слой выше</string>
+    <string name="layer_move_down">Переместить слой ниже</string>
 </resources>

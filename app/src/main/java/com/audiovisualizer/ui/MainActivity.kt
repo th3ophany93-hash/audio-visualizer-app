@@ -4,14 +4,10 @@ import android.content.Intent
 import android.media.MediaPlayer
 import android.net.Uri
 import android.os.Bundle
-import android.widget.LinearLayout
 import android.widget.PopupMenu
-import android.widget.ProgressBar
 import android.widget.SeekBar
-import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -100,9 +96,12 @@ class MainActivity : AppCompatActivity() {
         binding.timelineSeekBar.isEnabled = false
         binding.timelinePlayPauseButton.isEnabled = false
 
-        layerAdapter = LayerListAdapter(layers) { layer, isEnabled ->
-            layer.enabled = isEnabled
-        }
+        layerAdapter = LayerListAdapter(
+            layers,
+            onToggle = { layer, isEnabled -> layer.enabled = isEnabled },
+            onMoveUp = { layer -> moveLayer(layer, -1) },
+            onMoveDown = { layer -> moveLayer(layer, 1) }
+        )
         binding.layersList.layoutManager = LinearLayoutManager(this)
         binding.layersList.adapter = layerAdapter
 
@@ -197,20 +196,34 @@ class MainActivity : AppCompatActivity() {
         binding.visualizerSurface.renderer.layers = layers.toList()
     }
 
-    private var analysisProgressDialog: AlertDialog? = null
-    private var analysisProgressText: TextView? = null
-    private var analysisProgressBar: ProgressBar? = null
+    /**
+     * Draw order is significant (layers composite back-to-front, and e.g. a
+     * chromatic aberration layer only distorts whatever was already drawn
+     * below it), so a layer added before its intended background/content
+     * layer needs a way to move past it - not just be enabled/disabled.
+     */
+    private fun moveLayer(layer: Layer, delta: Int) {
+        val from = layers.indexOf(layer)
+        if (from < 0) return
+        val to = (from + delta).coerceIn(0, layers.size - 1)
+        if (to == from) return
+        layers.removeAt(from)
+        layers.add(to, layer)
+        layerAdapter.notifyItemMoved(from, to)
+        layerAdapter.notifyItemRangeChanged(minOf(from, to), kotlin.math.abs(to - from) + 1)
+        binding.visualizerSurface.renderer.layers = layers.toList()
+    }
 
     /**
      * Analyzes the picked track, makes sure the demo particle layer exists,
-     * then starts playback. UX spec section 1: shows a non-cancelable
-     * progress dialog with an explicit stage label + determinate bar for
-     * the whole analysis, rather than a bare spinner or a fire-and-forget
-     * Toast - and a clear completion signal once it's done.
+     * then starts playback. UX spec section 1: shows a non-modal, inline
+     * progress row (stage label + determinate bar) that lives in its own
+     * space below the timeline instead of covering the import buttons with
+     * a dialog, plus a clear completion signal once it's done.
      */
     private fun loadAudio(uri: Uri) {
         lifecycleScope.launch {
-            showAnalysisProgressDialog()
+            showAnalysisProgress()
             try {
                 val result = AudioAnalyzer(this@MainActivity).analyze(uri) { stage, fraction ->
                     runOnUiThread { updateAnalysisProgress(stage, fraction) }
@@ -218,53 +231,33 @@ class MainActivity : AppCompatActivity() {
                 analysisResult = result
                 ensureBassParticleLayer()
                 startPlayback(uri, result)
-                dismissAnalysisProgressDialog()
+                hideAnalysisProgress()
                 Toast.makeText(this@MainActivity, getString(R.string.analysis_complete), Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
-                dismissAnalysisProgressDialog()
+                hideAnalysisProgress()
                 val message = e.message ?: e.toString()
                 Toast.makeText(this@MainActivity, getString(R.string.analysis_failed, message), Toast.LENGTH_LONG).show()
             }
         }
     }
 
-    private fun showAnalysisProgressDialog() {
-        val paddingPx = (16 * resources.displayMetrics.density).roundToInt()
-        val text = TextView(this).apply { text = getString(R.string.analysis_stage_decoding) }
-        val bar = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
-            max = 100
-            progress = 0
-            isIndeterminate = false
-        }
-        val layout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(paddingPx, paddingPx, paddingPx, paddingPx)
-            addView(text)
-            addView(bar)
-        }
-        analysisProgressText = text
-        analysisProgressBar = bar
-        analysisProgressDialog = AlertDialog.Builder(this)
-            .setTitle(getString(R.string.analyzing_audio))
-            .setView(layout)
-            .setCancelable(false)
-            .show()
+    private fun showAnalysisProgress() {
+        binding.analysisProgressText.text = getString(R.string.analysis_stage_decoding)
+        binding.analysisProgressBar.progress = 0
+        binding.analysisProgressRow.visibility = android.view.View.VISIBLE
     }
 
     private fun updateAnalysisProgress(stage: AnalysisStage, fraction: Float) {
-        analysisProgressText?.text = when (stage) {
+        binding.analysisProgressText.text = when (stage) {
             AnalysisStage.DECODING -> getString(R.string.analysis_stage_decoding)
             AnalysisStage.ANALYZING -> getString(R.string.analysis_stage_analyzing)
             AnalysisStage.DONE -> getString(R.string.analysis_stage_done)
         }
-        analysisProgressBar?.progress = (fraction.coerceIn(0f, 1f) * 100).roundToInt()
+        binding.analysisProgressBar.progress = (fraction.coerceIn(0f, 1f) * 100).roundToInt()
     }
 
-    private fun dismissAnalysisProgressDialog() {
-        analysisProgressDialog?.dismiss()
-        analysisProgressDialog = null
-        analysisProgressText = null
-        analysisProgressBar = null
+    private fun hideAnalysisProgress() {
+        binding.analysisProgressRow.visibility = android.view.View.GONE
     }
 
     /** Adds the demo layer once: particles on top of everything else, driven by the bass band. */
@@ -410,7 +403,6 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         releasePlayback()
         exporter?.cancel()
-        dismissAnalysisProgressDialog()
         super.onDestroy()
     }
 
